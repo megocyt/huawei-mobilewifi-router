@@ -797,7 +797,7 @@ namespace HwWidget
             var m = new ContextMenuStrip();
             m.Renderer = new DarkMenuRenderer();
             m.ShowImageMargin = false;
-            m.Padding = new Padding(2, 4, 2, 4);
+            m.Padding = new Padding(4, 6, 4, 6);
             Add(m, "显示 / 隐藏悬浮窗", "toggle");
             Add(m, "设置…", "settings");
             Add(m, "立即刷新", "refresh");
@@ -813,6 +813,11 @@ namespace HwWidget
         static ToolStripMenuItem Add(ContextMenuStrip m, string text, string cmd)
         {
             var it = new ToolStripMenuItem(text);
+            it.AutoSize = false;
+            it.Height = 30;
+            it.Width = 176;
+            it.TextAlign = ContentAlignment.MiddleLeft;
+            it.Padding = new Padding(6, 4, 6, 4);
             string c = cmd;
             it.Click += delegate { OwnerDo(c); };
             m.Items.Add(it);
@@ -866,11 +871,11 @@ namespace HwWidget
     {
         class Table : ProfessionalColorTable
         {
-            public override Color MenuItemSelected { get { return Color.FromArgb(33, 38, 45); } }
-            public override Color MenuItemBorder { get { return Color.FromArgb(63, 185, 80); } }
+            public override Color MenuItemSelected { get { return Color.FromArgb(34, 60, 40); } }
+            public override Color MenuItemBorder { get { return Color.Transparent; } }
             public override Color MenuBorder { get { return Color.FromArgb(48, 54, 61); } }
-            public override Color MenuItemSelectedGradientBegin { get { return Color.FromArgb(33, 38, 45); } }
-            public override Color MenuItemSelectedGradientEnd { get { return Color.FromArgb(33, 38, 45); } }
+            public override Color MenuItemSelectedGradientBegin { get { return Color.FromArgb(34, 60, 40); } }
+            public override Color MenuItemSelectedGradientEnd { get { return Color.FromArgb(34, 60, 40); } }
             public override Color MenuItemPressedGradientBegin { get { return Color.FromArgb(13, 17, 23); } }
             public override Color MenuItemPressedGradientEnd { get { return Color.FromArgb(13, 17, 23); } }
             public override Color ToolStripDropDownBackground { get { return Color.FromArgb(13, 17, 23); } }
@@ -885,6 +890,11 @@ namespace HwWidget
 
         protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
         {
+            e.TextRectangle = new Rectangle(
+                e.TextRectangle.Left,
+                Math.Max(0, (e.Item.Height - e.TextFont.Height) / 2),
+                Math.Max(e.TextRectangle.Width, e.Item.Width),
+                e.TextFont.Height);
             e.TextColor = e.Item.Selected ? Color.FromArgb(230, 237, 243) : Color.FromArgb(201, 209, 217);
             base.OnRenderItemText(e);
         }

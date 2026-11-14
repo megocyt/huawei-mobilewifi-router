@@ -20,12 +20,13 @@ namespace HwWidget
             new[] { "traffic", "今日 / 本月流量" },
             new[] { "hosts",   "在线终端数" },
             new[] { "battery", "电量与充电状态" },
+            new[] { "msisdn",  "手机号" },
             new[] { "ip",      "本机 IP / WAN IP" },
             new[] { "uptime",  "设备运行时长" },
             new[] { "sms",     "未读短信提醒" },
             new[] { "clock",   "当前时间" },
         };
-        static readonly string[] DefaultOn = { "conn", "signal", "rate", "plan", "hosts", "battery" };
+        static readonly string[] DefaultOn = { "conn", "signal", "rate", "plan", "hosts", "battery", "msisdn" };
 
         public string host = "192.168.8.1";
         public string user = "admin";

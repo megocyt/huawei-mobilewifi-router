@@ -228,7 +228,7 @@ namespace HwWidget
                 outRows.Add(new Row
                 {
                     key = "rate", label = "速率",
-                    value = "↓ " + Device.HumanRate(s.rateDown).Replace(" ", "") + "  ↑ " + Device.HumanRate(s.rateUp).Replace(" ", ""),
+                    value = "↓" + Device.HumanRate(s.rateDown).Replace(" ", "") + "  ↑" + Device.HumanRate(s.rateUp).Replace(" ", ""),
                     color = Col("fg"), mono = true
                 });
             if (On("plan") && s.planLimit > 0)
@@ -265,6 +265,8 @@ namespace HwWidget
                     kind = Kind.Battery, frac = pct / 100.0, color = Col(low ? "warn" : "accent"), charging = s.charging
                 });
             }
+            if (On("msisdn") && !string.IsNullOrEmpty(s.msisdn) && s.msisdn != "-")
+                outRows.Add(new Row { key = "msisdn", label = "号码", value = s.msisdn, color = Col("fg"), mono = true });
             if (On("ip"))
             {
                 outRows.Add(new Row { key = "ip", label = "本机", value = LocalIp(cfg.host), color = Col("fg"), mono = true });
@@ -530,6 +532,14 @@ namespace HwWidget
                         }
                         else if (fillW > 0.5f)
                             g.FillRectangle(bFill, cx - 7.5f, cy - 3.5f, fillW, 7);
+                        break;
+                    }
+                    case "msisdn":
+                    {
+                        // 手机：圆角机身 + 底部圆点
+                        var phone = new Rectangle((int)(cx - 5), (int)(cy - 7), 10, 14);
+                        using (var p = Round(phone, 3)) g.DrawPath(pen, p);
+                        g.FillEllipse(bFill, cx - 1.2f, cy + 4.2f, 2.4f, 2.4f);
                         break;
                     }
                     case "ip":

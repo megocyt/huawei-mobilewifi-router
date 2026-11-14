@@ -37,6 +37,7 @@ namespace HwWidget
         public string battery = "-";
         public bool charging;
         public string wanIp = "-";
+        public string msisdn = "-";
         public long uptime;
         public string model = "-";
         public List<Host> hosts = new List<Host>();
@@ -637,6 +638,7 @@ namespace HwWidget
             s.smsInbox = (int)Lng(sms, "LocalInbox");
             var dev = Get("/api/device/information");
             s.wanIp = Str(dev, "WanIPAddress");
+            s.msisdn = Str(dev, "Msisdn");
             s.uptime = Lng(dev, "uptime");
             s.model = Str(dev, "DeviceName");
             if (s.loggedIn && (s.rsrp == "-" || s.hostsTotal == 0))
@@ -748,6 +750,7 @@ namespace HwWidget
             }
             var dev = Sub(snap, "device");
             s.wanIp = Str(dev, "WanIPAddress");
+            s.msisdn = Str(dev, "Msisdn");
             s.uptime = (long)D(dev, "uptime");
             s.model = Str(dev, "DeviceName");
             var plmn = Sub(snap, "plmn");

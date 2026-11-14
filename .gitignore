@@ -7,6 +7,7 @@ cs/build/*.exe
 cs/obj/
 cs/bin/
 
-# 调试过程截图
+# 调试过程截图与临时脚本
 screenshots/
 _shot_*.png
+_*.ps1

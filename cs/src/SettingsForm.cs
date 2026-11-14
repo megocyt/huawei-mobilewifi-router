@@ -1,37 +1,33 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Windows.Forms;
 
 namespace HwWidget
 {
-    /// <summary>设置窗口（暗色）。保存后回写 cfg 并落盘，悬浮窗立即重建。</summary>
+    /// <summary>设置窗口：浅色原生外观，顶部水平选项卡分页。</summary>
     public class SettingsForm : Form
     {
-        readonly Cfg cfg;                          // 目标配置（对话框内直接编辑副本）
+        readonly Cfg cfg;                          // 对话框内编辑副本
         public Cfg Result { get { return cfg; } }
 
-        ComboBox srcBox;
-        TextBox hostBox, userBox, pwdBox, panelBox;
-        NumericUpDown ivlBox, sizeBox;
+        FlatCombo srcBox;
+        SpinBox ivlBox, sizeBox;
         TrackBar alphaBar;
         Label alphaLbl;
         CheckBox savePwdBox, topBox, lockBox, borderBox, titleBox;
         readonly Dictionary<string, CheckBox> rowBoxes = new Dictionary<string, CheckBox>();
-        readonly Dictionary<string, Button> colorBtns = new Dictionary<string, Button>();
+        readonly Dictionary<string, ColorBox> colorBtns = new Dictionary<string, ColorBox>();
         static readonly string[][] ColorDefs =
         {
             new[] { "fg", "文字" }, new[] { "bg", "底色" },
             new[] { "accent", "正常" }, new[] { "warn", "告警" }, new[] { "bad", "异常" },
         };
+        TextBox hostBox, userBox, pwdBox, panelBox;
 
-        static readonly Color Bg = Color.FromArgb(13, 17, 23);
-        static readonly Color Panel = Color.FromArgb(22, 27, 34);
-        static readonly Color Txt = Color.FromArgb(201, 209, 217);
-        static readonly Color Muted = Color.FromArgb(139, 148, 158);
-        static readonly Color Line = Color.FromArgb(48, 54, 61);
-        static readonly Color Field = Color.FromArgb(13, 17, 23);
+        const int LX = 18, CX = 96;               // 标签列 / 控件列起点
 
         public SettingsForm(Cfg current)
         {
@@ -43,140 +39,158 @@ namespace HwWidget
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterScreen;
-            BackColor = Bg;
-            ForeColor = Txt;
             Font = new Font("Microsoft YaHei UI", 9f);
             TopMost = true;
-            ClientSize = new Size(468, 800);        // 占位，构造末尾按实际布局重算
+            ClientSize = new Size(520, 552);
 
-            int y = 12;
-            y = Group(y, "设备连接", g =>
-            {
-                int r = 26;
-                Lbl(g, 12, r, "数据源");
-                srcBox = new ComboBox { Left = 110, Top = r - 3, Width = 110, DropDownStyle = ComboBoxStyle.DropDownList };
-                srcBox.Items.AddRange(new object[] { "auto", "panel", "direct" });
-                Dark(srcBox);
-                srcBox.SelectedItem = cfg.source == "panel" || cfg.source == "direct" ? cfg.source : "auto";
-                g.Controls.Add(srcBox);
-                Hint(g, 230, r, "panel=走本机网页面板，最省设备会话");
-                r += 28;
-                Lbl(g, 12, r, "管理地址");
-                hostBox = Tbx(g, 110, r, 150, cfg.host);
-                Hint(g, 270, r, "一般是 192.168.8.1");
-                r += 28;
-                Lbl(g, 12, r, "登录用户");
-                userBox = Tbx(g, 110, r, 150, cfg.user);
-                r += 28;
-                Lbl(g, 12, r, "登录密码");
-                pwdBox = Tbx(g, 110, r, 150, cfg.password);
-                pwdBox.UseSystemPasswordChar = true;
-                r += 28;
-                Lbl(g, 12, r, "面板地址");
-                panelBox = Tbx(g, 110, r, 300, cfg.panelUrl);
-                r += 28;
-                Lbl(g, 12, r, "刷新秒数");
-                ivlBox = new NumericUpDown { Left = 110, Top = r - 3, Width = 70, Minimum = 2, Maximum = 120, Value = (decimal)Math.Max(2, Math.Min(120, cfg.interval)) };
-                Dark(ivlBox);
-                g.Controls.Add(ivlBox);
-                r += 30;
-                savePwdBox = Chk(g, 12, r, "把密码保存到本机配置文件（不勾则每次启动需重新输入）", cfg.savePassword);
-                return r + 26;
-            });
+            var tabs = new FlatTabControl { Left = 10, Top = 8, Width = 500, Height = 492 };
+            var tConn = new TabPage("连接") { BackColor = Color.White };
+            var tLook = new TabPage("外观") { BackColor = Color.White };
+            var tRows = new TabPage("显示内容") { BackColor = Color.White };
+            tabs.TabPages.Add(tConn);
+            tabs.TabPages.Add(tLook);
+            tabs.TabPages.Add(tRows);
+            Controls.Add(tabs);
 
-            y = Group(y, "外观", g =>
-            {
-                int r = 26;
-                Lbl(g, 12, r, "透明度");
-                alphaBar = new TrackBar { Left = 100, Top = r - 6, Width = 160, Minimum = 25, Maximum = 100, TickStyle = TickStyle.None };
-                alphaBar.Value = (int)Math.Round(cfg.alpha * 100);
-                alphaLbl = new Label { Left = 266, Top = r, Width = 46, AutoSize = false, ForeColor = Muted };
-                alphaBar.Scroll += delegate { alphaLbl.Text = alphaBar.Value + "%"; };
-                alphaLbl.Text = alphaBar.Value + "%";
-                g.Controls.Add(alphaBar);
-                g.Controls.Add(alphaLbl);
-                Lbl(g, 330, r, "字号");
-                sizeBox = new NumericUpDown { Left = 380, Top = r - 3, Width = 56, Minimum = 9, Maximum = 30, Value = cfg.fontSize };
-                Dark(sizeBox);
-                g.Controls.Add(sizeBox);
-                r += 42;
-                foreach (string[] cd in ColorDefs)
-                {
-                    Lbl(g, 12 + Array.IndexOf(ColorDefs, cd) * 86, r, cd[1]);
-                    var b = new Button
-                    {
-                        Left = 48 + Array.IndexOf(ColorDefs, cd) * 86,
-                        Top = r - 3,
-                        Width = 40,
-                        Height = 20,
-                        FlatStyle = FlatStyle.Flat,
-                        BackColor = Hex(ColorOf(cfg, cd[0]))
-                    };
-                    b.FlatAppearance.BorderColor = Line;
-                    string key = cd[0];
-                    b.Click += delegate { PickColor(key, b); };
-                    g.Controls.Add(b);
-                    colorBtns[key] = b;
-                }
-                r += 34;
-                topBox = Chk(g, 12, r, "置顶显示", cfg.topmost);
-                lockBox = Chk(g, 150, r, "锁定位置（防误拖）", cfg.locked);
-                borderBox = Chk(g, 320, r, "无边框", cfg.borderless);
-                r += 26;
-                titleBox = Chk(g, 12, r, "显示标题行", cfg.showTitle);
-                return r + 26;
-            });
+            BuildConnPage(tConn);
+            BuildLookPage(tLook);
+            BuildRowsPage(tRows);
 
-            y = Group(y, "显示内容", g =>
-            {
-                int r = 26;
-                for (int i = 0; i < Cfg.RowDefs.Length; i++)
-                {
-                    string[] d = Cfg.RowDefs[i];
-                    var c = Chk(g, 12 + (i % 2) * 220, r + (i / 2) * 24, d[1], cfg.rows[d[0]]);
-                    rowBoxes[d[0]] = c;
-                }
-                return r + ((Cfg.RowDefs.Length + 1) / 2) * 24 + 4;
-            });
-
-            var tip = new Label
-            {
-                Text = "改动立即生效",
-                Left = 14, Top = y + 13, AutoSize = true, ForeColor = Muted
-            };
-            Controls.Add(tip);
-            var ok = Btn(y + 6, "保存并应用", true);
-            ok.Click += delegate { SaveAndClose(); };
-            var cancel = Btn(y + 6, "取消", false);
+            var cancel = new Button { Text = "取消", Left = 300, Top = 510, Width = 100, Height = 30 };
             cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
+            Controls.Add(cancel);
+            var ok = new Button { Text = "保存并应用", Left = 410, Top = 510, Width = 100, Height = 30 };
+            ok.Click += delegate { SaveAndClose(); };
+            Controls.Add(ok);
             AcceptButton = ok;
-
-            // 按实际堆叠高度定窗口尺寸
-            ClientSize = new Size(468, y + 6 + 28 + 14);
 
             ResumeLayout(false);
         }
 
-        Button Btn(int y, string text, bool accent)
+        // ---------------------------------------------------------------- 公共小件
+        static void Lbl(Control p, int y, string text)
         {
-            var b = new Button
-            {
-                Text = text,
-                Top = y,
-                Width = 96,
-                Height = 28,
-                FlatStyle = FlatStyle.Flat,
-                BackColor = accent ? Color.FromArgb(35, 64, 42) : Panel,
-                ForeColor = Txt,
-                DialogResult = accent ? DialogResult.OK : DialogResult.Cancel
-            };
-            b.FlatAppearance.BorderColor = accent ? Color.FromArgb(63, 185, 80) : Line;
-            b.Location = new Point(468 - 12 - (accent ? 96 + 8 + 96 : 96), y);
-            Controls.Add(b);
-            return b;
+            p.Controls.Add(new Label { Text = text, Left = LX, Top = y + 4, AutoSize = true });
         }
 
-        void PickColor(string key, Button b)
+        static void Hint(Control p, int x, int y, string text)
+        {
+            p.Controls.Add(new Label { Text = text, Left = x, Top = y + 4, AutoSize = true, ForeColor = Color.FromArgb(120, 126, 133) });
+        }
+
+        static TextBox Tbx(Control p, int y, int w, string text)
+        {
+            var box = new LineBox { Left = CX, Top = y, Width = w, Height = 24 };
+            var t = new TextBox { Text = text, BorderStyle = BorderStyle.None, BackColor = Color.White };
+            t.Left = 6;
+            t.Top = (box.Height - t.Height) / 2;
+            t.Width = w - 12;
+            box.Controls.Add(t);
+            p.Controls.Add(box);
+            return t;
+        }
+
+        static LineBox WrapBox(Control p, int x, int y, int w)
+        {
+            var box = new LineBox { Left = x, Top = y, Width = w, Height = 24 };
+            p.Controls.Add(box);
+            return box;
+        }
+
+        static CheckBox Chk(Control p, int x, int y, string text, bool on)
+        {
+            var c = new CheckBox { Text = text, Left = x, Top = y, AutoSize = true, Checked = on };
+            p.Controls.Add(c);
+            return c;
+        }
+
+        // ---------------------------------------------------------------- 连接页
+        void BuildConnPage(TabPage p)
+        {
+            int y = 18;
+            Lbl(p, y, "数据源");
+            srcBox = new FlatCombo(new string[] { "auto", "panel", "direct" }) { Left = CX, Top = y, Width = 120, Height = 24 };
+            srcBox.SelectedItem = cfg.source == "panel" || cfg.source == "direct" ? cfg.source : "auto";
+            p.Controls.Add(srcBox);
+            Hint(p, 232, y, "panel=走本机面板，不顶号");
+            y += 38;
+
+            Lbl(p, y, "管理地址");
+            hostBox = Tbx(p, y, 200, cfg.host);
+            Hint(p, 306, y, "一般是 192.168.8.1");
+            y += 38;
+            Lbl(p, y, "登录用户");
+            userBox = Tbx(p, y, 200, cfg.user);
+            y += 38;
+            Lbl(p, y, "登录密码");
+            pwdBox = Tbx(p, y, 200, cfg.password);
+            pwdBox.UseSystemPasswordChar = true;
+            y += 38;
+            Lbl(p, y, "面板地址");
+            panelBox = Tbx(p, y, 340, cfg.panelUrl);
+            y += 38;
+            Lbl(p, y, "刷新秒数");
+            ivlBox = new SpinBox { Left = CX, Top = y, Width = 70, Height = 24, Minimum = 2, Maximum = 120, Increment = 1, Value = (decimal)Math.Max(2, Math.Min(120, cfg.interval)) };
+            p.Controls.Add(ivlBox);
+            y += 44;
+            savePwdBox = Chk(p, LX, y, "把密码保存到本机配置文件（不勾则每次启动需重新输入）", cfg.savePassword);
+        }
+
+        // ---------------------------------------------------------------- 外观页
+        void BuildLookPage(TabPage p)
+        {
+            int y = 18;
+            Lbl(p, y, "透明度");
+            alphaBar = new TrackBar { Left = CX - 4, Top = y - 6, Width = 200, Minimum = 25, Maximum = 100, TickStyle = TickStyle.None };
+            alphaBar.Value = (int)Math.Round(cfg.alpha * 100);
+            alphaLbl = new Label { Left = 300, Top = y + 4, Width = 46, AutoSize = false };
+            alphaBar.Scroll += delegate { alphaLbl.Text = alphaBar.Value + "%"; };
+            alphaLbl.Text = alphaBar.Value + "%";
+            p.Controls.Add(alphaBar);
+            p.Controls.Add(alphaLbl);
+            y += 48;
+
+            Lbl(p, y, "字号");
+            sizeBox = new SpinBox { Left = CX, Top = y, Width = 60, Height = 24, Minimum = 9, Maximum = 30, Increment = 1, Value = cfg.fontSize };
+            p.Controls.Add(sizeBox);
+            y += 48;
+
+            p.Controls.Add(new Label { Text = "颜色", Left = LX, Top = y, AutoSize = true, Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold) });
+            y += 26;
+            for (int i = 0; i < ColorDefs.Length; i++)
+            {
+                int col = i;
+                p.Controls.Add(new Label { Text = ColorDefs[col][1], Left = LX + col * 84, Top = y + 4, AutoSize = true });
+                var b = new ColorBox { Left = LX + col * 84 + 40, Top = y, Width = 26, Height = 24, Value = Hex(ColorOf(cfg, ColorDefs[col][0])) };
+                string key = ColorDefs[col][0];
+                b.Click += delegate { PickColor(key, b); };
+                p.Controls.Add(b);
+                colorBtns[key] = b;
+            }
+            y += 42;
+
+            p.Controls.Add(new Label { Text = "行为", Left = LX, Top = y, AutoSize = true, Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold) });
+            y += 26;
+            topBox = Chk(p, LX + 4, y, "置顶显示", cfg.topmost);
+            borderBox = Chk(p, 240, y, "无边框样式", cfg.borderless);
+            y += 30;
+            lockBox = Chk(p, LX + 4, y, "锁定位置（防误拖）", cfg.locked);
+            titleBox = Chk(p, 240, y, "显示标题行", cfg.showTitle);
+        }
+
+        // ---------------------------------------------------------------- 显示内容页
+        void BuildRowsPage(TabPage p)
+        {
+            for (int i = 0; i < Cfg.RowDefs.Length; i++)
+            {
+                string[] d = Cfg.RowDefs[i];
+                var c = Chk(p, LX + (i % 2) * 230, 18 + (i / 2) * 32, d[1], cfg.rows[d[0]]);
+                rowBoxes[d[0]] = c;
+            }
+        }
+
+        // ---------------------------------------------------------------- 保存
+        void PickColor(string key, ColorBox b)
         {
             using (var dlg = new ColorDialog())
             {
@@ -188,7 +202,7 @@ namespace HwWidget
                                       + dlg.Color.G.ToString("x2", CultureInfo.InvariantCulture)
                                       + dlg.Color.B.ToString("x2", CultureInfo.InvariantCulture);
                     SetColor(cfg, key, hex);
-                    b.BackColor = dlg.Color;
+                    b.Value = dlg.Color;
                 }
             }
         }
@@ -219,87 +233,9 @@ namespace HwWidget
 
         static Color Hex(Color c) { return Color.FromArgb(c.R, c.G, c.B); }
 
-        // ---------------------------------------------------------------- 布局小件
-        int Group(int y, string title, Func<Panel, int> fill)
-        {
-            var cap = new Label { Text = " " + title, Left = 10, Top = y, AutoSize = true, ForeColor = Color.FromArgb(88, 166, 255) };
-            Controls.Add(cap);
-            var p = new Panel { Left = 10, Top = y + 20, Width = 448, Height = 10, BorderStyle = BorderStyle.None, BackColor = Panel };
-            Controls.Add(p);
-            int inner = fill(p);
-            p.Height = inner;
-            // 描边
-            p.Paint += delegate(object s, PaintEventArgs e)
-            {
-                using (var pen = new Pen(Line))
-                    e.Graphics.DrawRectangle(pen, 0, 0, p.Width - 1, p.Height - 1);
-            };
-            return y + 20 + inner + 12;
-        }
-
-        void Lbl(Control parent, int x, int y, string text)
-        {
-            parent.Controls.Add(new Label
-            {
-                Text = text,
-                Left = x,
-                Top = y + 3,
-                AutoSize = true,
-                ForeColor = Muted
-            });
-        }
-
-        void Hint(Control parent, int x, int y, string text)
-        {
-            parent.Controls.Add(new Label
-            {
-                Text = text,
-                Left = x,
-                Top = y + 3,
-                AutoSize = true,
-                ForeColor = Color.FromArgb(110, 118, 129)
-            });
-        }
-
-        TextBox Tbx(Control parent, int x, int y, int w, string text)
-        {
-            var t = new TextBox { Left = x, Top = y, Width = w, Text = text };
-            Dark(t);
-            parent.Controls.Add(t);
-            return t;
-        }
-
-        static void Dark(Control c)
-        {
-            c.BackColor = Field;
-            c.ForeColor = Txt;
-            var t = c as TextBoxBase;
-            if (t != null) { t.BorderStyle = BorderStyle.FixedSingle; return; }
-            var n = c as NumericUpDown;
-            if (n != null) { n.BorderStyle = BorderStyle.FixedSingle; return; }
-            var cb = c as ComboBox;
-            if (cb != null) { cb.FlatStyle = FlatStyle.Flat; }
-        }
-
-        CheckBox Chk(Control parent, int x, int y, string text, bool on)
-        {
-            var c = new CheckBox
-            {
-                Text = text,
-                Left = x,
-                Top = y,
-                AutoSize = true,
-                Checked = on,
-                ForeColor = Txt,
-                BackColor = Color.Transparent
-            };
-            parent.Controls.Add(c);
-            return c;
-        }
-
         void SaveAndClose()
         {
-            cfg.source = (string)srcBox.SelectedItem ?? "auto";
+            cfg.source = string.IsNullOrEmpty(srcBox.SelectedItem) ? "auto" : srcBox.SelectedItem;
             cfg.host = string.IsNullOrEmpty(hostBox.Text.Trim()) ? "192.168.8.1" : hostBox.Text.Trim();
             cfg.user = string.IsNullOrEmpty(userBox.Text.Trim()) ? "admin" : userBox.Text.Trim();
             cfg.password = pwdBox.Text;
@@ -316,6 +252,340 @@ namespace HwWidget
             cfg.Save();
             DialogResult = DialogResult.OK;
             Close();
+        }
+    }
+
+    /// <summary>Qt Fusion 式下拉框：完全自绘。弹出层用页面内嵌覆盖面板（非独立窗口），
+    /// 尺寸严格等于控件宽，彻底避免顶层窗口尺寸被运行时改写的问题。</summary>
+    class FlatCombo : Panel
+    {
+        readonly string[] items;
+        int sel = -1;
+        readonly Panel host;
+        readonly QListView lb;
+        Form hookedForm;
+        Control hookedPage;
+        MouseEventHandler dropHook;
+
+        public FlatCombo(string[] entries)
+        {
+            items = entries;
+            BackColor = Color.White;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            lb = new QListView();
+            lb.MouseUp += delegate
+            {
+                if (lb.SelectedIndex >= 0) { sel = lb.SelectedIndex; Invalidate(); }
+                CloseDrop();
+            };
+            host = new Panel { BackColor = Color.White, Visible = false };
+            host.Paint += delegate(object s, PaintEventArgs e)
+            {
+                using (var p = new Pen(Color.FromArgb(140, 151, 163)))
+                    e.Graphics.DrawRectangle(p, 0, 0, host.Width - 1, host.Height - 1);
+                // 右侧常驻滚动条槽：近白轨道 + 细浅灰圆角滑块
+                int sx = host.Width - 12;
+                using (var b = new SolidBrush(Color.FromArgb(251, 252, 253)))
+                    e.Graphics.FillRectangle(b, sx + 1, 1, 10, host.Height - 2);
+                using (var p = new Pen(Color.FromArgb(228, 231, 235)))
+                    e.Graphics.DrawLine(p, sx + 1, 1, sx + 1, host.Height - 2);
+                var thumb = new Rectangle(sx + 3, 3, 6, Math.Max(10, host.Height - 8));
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var path = RoundedRect(thumb, 3))
+                using (var b = new SolidBrush(Color.FromArgb(201, 206, 212)))
+                    e.Graphics.FillPath(b, path);
+            };
+            host.Controls.Add(lb);
+        }
+
+        static GraphicsPath RoundedRect(Rectangle r, int rad)
+        {
+            int d = rad * 2;
+            var p = new GraphicsPath();
+            p.AddArc(r.X, r.Y, d, d, 180, 90);
+            p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            p.CloseFigure();
+            return p;
+        }
+
+        public string SelectedItem
+        {
+            get { return sel < 0 ? "" : items[sel]; }
+            set
+            {
+                for (int i = 0; i < items.Length; i++) if (items[i] == value) { sel = i; break; }
+                Invalidate();
+            }
+        }
+
+        void CloseDrop()
+        {
+            host.Visible = false;
+            Invalidate();
+        }
+
+        protected override void OnMouseClick(MouseEventArgs e)
+        {
+            base.OnMouseClick(e);
+            if (host.Visible) { CloseDrop(); return; }
+            Control page = Parent;
+            if (page == null) return;
+            if (host.Parent == null) page.Controls.Add(host);
+            lb.Items.Clear();
+            lb.Items.AddRange(items);
+            lb.Highlight = SelectedItem;
+            int h = items.Length * lb.ItemHeight + 2;
+            host.BringToFront();
+            host.SetBounds(Left, Bottom, Width, h);
+            lb.SetBounds(1, 1, Width - 13, h - 2);
+            host.Visible = true;
+            Invalidate();
+            HookOutsideClick(page);
+        }
+
+        void HookOutsideClick(Control page)
+        {
+            if (dropHook == null)
+                dropHook = delegate(object s, MouseEventArgs me)
+                {
+                    if (!host.Visible) return;
+                    if (me.Button != MouseButtons.Left) return;
+                    Control src = s as Control;
+                    Point rel = src.PointToClient(me.Location);
+                    if (src == page)
+                    {
+                        if (!host.Bounds.Contains(rel)) CloseDrop();
+                        return;
+                    }
+                    // 点在其它控件上：相对页面坐标再判一次
+                    Point onPage = page.PointToClient(src.PointToScreen(me.Location));
+                    if (!host.Bounds.Contains(onPage)) CloseDrop();
+                };
+            Unhook();
+            hookedPage = page;
+            page.MouseDown += dropHook;
+            hookedForm = FindForm();
+            if (hookedForm != null) hookedForm.MouseDown += dropHook;
+        }
+
+        void Unhook()
+        {
+            if (dropHook == null) return;
+            if (hookedPage != null) hookedPage.MouseDown -= dropHook;
+            if (hookedForm != null) hookedForm.MouseDown -= dropHook;
+        }
+
+        protected override void OnHandleDestroyed(EventArgs e)
+        {
+            Unhook();
+            base.OnHandleDestroyed(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, ClientRectangle);
+            // 展开时右侧按钮区浅蓝高亮（Qt Fusion 行为）
+            if (host.Visible)
+                using (var b = new SolidBrush(Color.FromArgb(205, 228, 247)))
+                    g.FillRectangle(b, Width - 28, 1, 27, Height - 2);
+            using (var p = new Pen(Color.FromArgb(224, 226, 229))) g.DrawRectangle(p, 0, 0, Width - 1, Height - 2);
+            using (var p = new Pen(Color.FromArgb(168, 172, 178))) g.DrawLine(p, 0, Height - 1, Width, Height - 1);
+            TextRenderer.DrawText(g, SelectedItem, Font, new Rectangle(6, 0, Width - 38, Height), Color.Black,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var p = new Pen(Color.FromArgb(70, 74, 80), 1.6f))
+            {
+                p.StartCap = LineCap.Round; p.EndCap = LineCap.Round;
+                float vx = Width - 19, vy = Height / 2f - 2f;
+                g.DrawLines(p, new[] { new PointF(vx - 5, vy), new PointF(vx, vy + 4.5f), new PointF(vx + 5, vy) });
+            }
+        }
+    }
+
+    /// <summary>Qt Fusion 式下拉列表：当前值行浅蓝底+蓝框，其余白底黑字。</summary>
+    class QListView : ListBox
+    {
+        public string Highlight = "";
+        public QListView()
+        {
+            DrawMode = DrawMode.OwnerDrawFixed;
+            BorderStyle = BorderStyle.None;
+            ItemHeight = 28;
+            IntegralHeight = false;
+            HorizontalScrollbar = false;
+            BackColor = Color.White;
+        }
+        protected override void OnDrawItem(DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+            Graphics g = e.Graphics;
+            // ListBox 宽度已让开滚动条槽，选项铺满自身区域，不再重复缩进
+            Rectangle r = e.Bounds;
+            string text = Items[e.Index].ToString();
+            bool cur = text == Highlight;
+            if (cur)
+            {
+                using (var b = new SolidBrush(Color.FromArgb(197, 227, 246))) g.FillRectangle(b, r);
+                using (var p = new Pen(Color.FromArgb(74, 144, 217)))
+                    g.DrawRectangle(p, r.X + 1, r.Y + 1, r.Width - 3, r.Height - 3);
+            }
+            else using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, r);
+            TextRenderer.DrawText(g, text, Font,
+                new Rectangle(r.X + 8, r.Y, r.Width - 14, r.Height), Color.Black,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
+    }
+
+    /// <summary>Qt Fusion 式数字框：LineBox 同款描边，白底，右侧上下黑色小三角无按钮块。</summary>
+    class SpinBox : Panel
+    {
+        readonly TextBox tb;
+        decimal val, min, max, step = 1;
+        const int BtnW = 18;
+
+        public SpinBox()
+        {
+            BackColor = Color.White;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            tb = new TextBox { BorderStyle = BorderStyle.None, BackColor = Color.White };
+            tb.Leave += delegate { Commit(); };
+            tb.KeyDown += delegate(object s, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) Commit(); };
+            Controls.Add(tb);
+        }
+
+        public decimal Minimum { get { return min; } set { min = value; if (max == 0) max = min + 1; Clamp(); } }
+        public decimal Maximum { get { return max; } set { max = value; Clamp(); } }
+        public decimal Increment { get { return step; } set { step = value; } }
+        public decimal Value
+        {
+            get { return val; }
+            set { val = value; Clamp(); UpdateText(); }
+        }
+
+        void Clamp() { if (max > min) val = Math.Max(min, Math.Min(max, val)); }
+        void UpdateText() { tb.Text = val.ToString("0", CultureInfo.InvariantCulture); }
+        void Commit()
+        {
+            decimal v;
+            if (decimal.TryParse(tb.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { val = v; }
+            Clamp(); UpdateText(); Invalidate();
+        }
+
+        protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); tb.Focus(); }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            if (e.Button != MouseButtons.Left || e.X < Width - BtnW) return;
+            if (e.Y < Height / 2) val += step; else val -= step;   // 上=加，下=减
+            Clamp(); UpdateText(); Invalidate();
+        }
+
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            base.OnMouseWheel(e);
+            val += e.Delta > 0 ? step : -step;
+            Clamp(); UpdateText(); Invalidate();
+        }
+
+        protected override void OnLayout(LayoutEventArgs e)
+        {
+            base.OnLayout(e);
+            tb.Left = 6;
+            tb.Top = (Height - tb.Height) / 2;
+            tb.Width = Width - BtnW - 12;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, ClientRectangle);
+            int sep = Width - BtnW;
+            using (var b = new SolidBrush(Color.FromArgb(240, 242, 244)))
+                g.FillRectangle(b, sep + 1, 1, BtnW - 2, Height - 2);
+            using (var p = new Pen(Color.FromArgb(224, 226, 229))) g.DrawRectangle(p, 0, 0, Width - 1, Height - 2);
+            using (var p = new Pen(Color.FromArgb(168, 172, 178))) g.DrawLine(p, 0, Height - 1, Width, Height - 1);
+            using (var p = new Pen(Color.FromArgb(200, 203, 208)))
+            {
+                g.DrawLine(p, sep, 1, sep, Height - 2);                     // 编辑区/按钮区分隔
+                g.DrawLine(p, sep + 1, Height / 2, Width - 1, Height / 2);  // 上下按钮分隔
+            }
+            using (var b = new SolidBrush(Color.FromArgb(70, 74, 80)))
+            {
+                int ax = sep + BtnW / 2;
+                int uy = Height / 4, dy = Height - Height / 4;              // 上/下半区中心
+                g.FillPolygon(b, new Point[] { new Point(ax - 3, uy + 2), new Point(ax + 3, uy + 2), new Point(ax, uy - 2) });
+                g.FillPolygon(b, new Point[] { new Point(ax - 3, dy - 2), new Point(ax + 3, dy - 2), new Point(ax, dy + 2) });
+            }
+        }
+    }
+
+    /// <summary>自绘选项卡：选中页签涂白并与白色内容区连通。</summary>
+    class FlatTabControl : TabControl
+    {
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (m.Msg != 0x000F && m.Msg != 0x0317) return;   // WM_PAINT / WM_PRINTCLIENT
+            if (SelectedIndex < 0 || TabCount == 0) return;
+            Rectangle r;
+            try { r = GetTabRect(SelectedIndex); }
+            catch { return; }
+            if (r.Width <= 0) return;
+            Graphics g = m.Msg == 0x0317 ? Graphics.FromHdc(m.WParam) : CreateGraphics();
+            using (g)
+            {
+                var fill = new Rectangle(r.X - 1, r.Y, r.Width + 2, r.Height + 1);
+                using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, fill);
+                TextRenderer.DrawText(g, SelectedTab.Text, Font,
+                    new Rectangle(r.X, r.Y - 1, r.Width, r.Height), ForeColor,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            }
+        }
+    }
+
+    /// <summary>色块选择框：与 LineBox 同款描边，内部留白后填色。</summary>
+    class ColorBox : Control
+    {
+        Color value = Color.White;
+        public Color Value
+        {
+            get { return value; }
+            set { this.value = value; Invalidate(); }
+        }
+        public ColorBox()
+        {
+            BackColor = Color.White;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, ClientRectangle);
+            using (var b = new SolidBrush(value))
+                g.FillRectangle(b, 3, 3, Width - 7, Height - 7);
+            using (var p = new Pen(Color.FromArgb(224, 226, 229))) g.DrawRectangle(p, 0, 0, Width - 1, Height - 2);
+            using (var p = new Pen(Color.FromArgb(168, 172, 178))) g.DrawLine(p, 0, Height - 1, Width, Height - 1);
+        }
+    }
+
+    /// <summary>Qt Fusion 式输入框容器：白底，极浅四边框 + 稍深底线。</summary>
+    class LineBox : Panel
+    {
+        public LineBox()
+        {
+            BackColor = Color.White;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, ClientRectangle);
+            using (var p = new Pen(Color.FromArgb(224, 226, 229))) g.DrawRectangle(p, 0, 0, Width - 1, Height - 2);
+            using (var p = new Pen(Color.FromArgb(168, 172, 178))) g.DrawLine(p, 0, Height - 1, Width, Height - 1);
         }
     }
 

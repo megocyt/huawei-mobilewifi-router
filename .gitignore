@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+
+# C# 编译产物（可用 cs/build/build.ps1 一键重新生成，不入库）
+cs/build/*.exe
+cs/obj/
+cs/bin/
+
+# 调试过程截图
+screenshots/
+_shot_*.png

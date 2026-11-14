@@ -20,7 +20,7 @@ namespace HwWidget
             {
                 if (!created)
                 {
-                    MessageBox.Show("悬浮窗已经在运行了（看系统托盘）", "华为随身 WiFi");
+                    MessageBox.Show(L.T("app.running"), L.T("tray.title"));
                     return;
                 }
                 try { SetProcessDPIAware(); } catch { }

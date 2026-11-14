@@ -11,20 +11,10 @@ namespace HwWidget
     /// %APPDATA%\HWiFiWidget\config.json（键名完全一致，两边可互相接管）。</summary>
     public class Cfg
     {
-        public static readonly string[][] RowDefs =
+        public static readonly string[] RowKeys =
         {
-            new[] { "conn",    "连接状态 / 运营商" },
-            new[] { "signal",  "信号格 + RSRP/SINR" },
-            new[] { "rate",    "实时上下行速率" },
-            new[] { "plan",    "套餐用量与剩余天数" },
-            new[] { "traffic", "今日 / 本月流量" },
-            new[] { "hosts",   "在线终端数" },
-            new[] { "battery", "电量与充电状态" },
-            new[] { "msisdn",  "手机号" },
-            new[] { "ip",      "本机 IP / WAN IP" },
-            new[] { "uptime",  "设备运行时长" },
-            new[] { "sms",     "未读短信提醒" },
-            new[] { "clock",   "当前时间" },
+            "conn", "signal", "rate", "plan", "traffic", "hosts",
+            "battery", "msisdn", "ip", "uptime", "sms", "clock",
         };
         static readonly string[] DefaultOn = { "conn", "signal", "rate", "plan", "hosts", "battery", "msisdn" };
 
@@ -32,6 +22,7 @@ namespace HwWidget
         public string user = "admin";
         public string password = "";
         public string source = "auto";                       // auto | panel | direct
+        public string language = "zh-CN";                    // zh-CN | en | zh-TW
         public string panelUrl = "http://127.0.0.1:8765/data";
         public double interval = 5.0;
         public double alpha = 0.88;
@@ -52,11 +43,11 @@ namespace HwWidget
 
         public Cfg()
         {
-            foreach (string[] r in RowDefs)
+            foreach (string k in RowKeys)
             {
                 bool on = false;
-                foreach (string d in DefaultOn) if (d == r[0]) { on = true; break; }
-                rows[r[0]] = on;
+                foreach (string d in DefaultOn) if (d == k) { on = true; break; }
+                rows[k] = on;
             }
         }
 
@@ -98,6 +89,7 @@ namespace HwWidget
             c.user = Str(d, "user", c.user);
             c.password = Str(d, "password", "");
             c.source = Str(d, "source", c.source);
+            c.language = Str(d, "language", c.language);
             c.panelUrl = Str(d, "panel_url", c.panelUrl);
             c.interval = Num(d, "interval", c.interval);
             c.alpha = Num(d, "alpha", c.alpha);
@@ -134,6 +126,8 @@ namespace HwWidget
         {
             if (string.IsNullOrEmpty(c.password))
                 c.password = Environment.GetEnvironmentVariable("HWIFI_PASSWORD") ?? "";
+            if (c.language != "en" && c.language != "zh-TW") c.language = "zh-CN";
+            L.Lang = c.language;
             return c;
         }
 
@@ -144,17 +138,17 @@ namespace HwWidget
             sb.Append("{\n");
             Put(sb, "host", host); Put(sb, "user", user);
             Put(sb, "password", savePassword ? password : "");
-            Put(sb, "source", source); Put(sb, "panel_url", panelUrl);
+            Put(sb, "source", source); Put(sb, "language", language); Put(sb, "panel_url", panelUrl);
             PutNum(sb, "interval", interval); PutNum(sb, "alpha", Math.Round(alpha, 2));
             Put(sb, "font_family", fontFam); PutNum(sb, "font_size", fontSize);
             Put(sb, "fg", fg); Put(sb, "bg", bg); Put(sb, "accent", accent);
             Put(sb, "warn", warn); Put(sb, "bad", bad);
             sb.Append(" \"rows\": {");
             bool first = true;
-            foreach (string[] r in RowDefs)
+            foreach (string k in RowKeys)
             {
                 sb.Append(first ? "" : ","); first = false;
-                sb.Append('"').Append(r[0]).Append("\": ").Append(rows[r[0]] ? "true" : "false");
+                sb.Append('"').Append(k).Append("\": ").Append(rows[k] ? "true" : "false");
             }
             sb.Append("},\n");
             PutBool(sb, "topmost", topmost); PutBool(sb, "borderless", borderless);

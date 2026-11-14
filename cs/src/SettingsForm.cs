@@ -20,11 +20,9 @@ namespace HwWidget
         CheckBox savePwdBox, topBox, lockBox, borderBox, titleBox;
         readonly Dictionary<string, CheckBox> rowBoxes = new Dictionary<string, CheckBox>();
         readonly Dictionary<string, ColorBox> colorBtns = new Dictionary<string, ColorBox>();
-        static readonly string[][] ColorDefs =
-        {
-            new[] { "fg", "文字" }, new[] { "bg", "底色" },
-            new[] { "accent", "正常" }, new[] { "warn", "告警" }, new[] { "bad", "异常" },
-        };
+        static readonly string[] ColorKeys = { "fg", "bg", "accent", "warn", "bad" };
+
+        FlatCombo langBox;
         TextBox hostBox, userBox, pwdBox, panelBox;
 
         const int LX = 18, CX = 96;               // 标签列 / 控件列起点
@@ -33,7 +31,7 @@ namespace HwWidget
         {
             cfg = current.CloneLike();
             SuspendLayout();
-            Text = "悬浮窗设置";
+            Text = L.T("win.title");
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -44,9 +42,9 @@ namespace HwWidget
             ClientSize = new Size(520, 552);
 
             var tabs = new FlatTabControl { Left = 10, Top = 8, Width = 500, Height = 492 };
-            var tConn = new TabPage("连接") { BackColor = Color.White };
-            var tLook = new TabPage("外观") { BackColor = Color.White };
-            var tRows = new TabPage("显示内容") { BackColor = Color.White };
+            var tConn = new TabPage(L.T("tab.conn")) { BackColor = Color.White };
+            var tLook = new TabPage(L.T("tab.look")) { BackColor = Color.White };
+            var tRows = new TabPage(L.T("tab.rows")) { BackColor = Color.White };
             tabs.TabPages.Add(tConn);
             tabs.TabPages.Add(tLook);
             tabs.TabPages.Add(tRows);
@@ -56,10 +54,10 @@ namespace HwWidget
             BuildLookPage(tLook);
             BuildRowsPage(tRows);
 
-            var cancel = new Button { Text = "取消", Left = 300, Top = 510, Width = 100, Height = 30 };
+            var cancel = new Button { Text = L.T("btn.cancel"), Left = 300, Top = 510, Width = 100, Height = 30 };
             cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
             Controls.Add(cancel);
-            var ok = new Button { Text = "保存并应用", Left = 410, Top = 510, Width = 100, Height = 30 };
+            var ok = new Button { Text = L.T("btn.save"), Left = 410, Top = 510, Width = 100, Height = 30 };
             ok.Click += delegate { SaveAndClose(); };
             Controls.Add(ok);
             AcceptButton = ok;
@@ -108,39 +106,45 @@ namespace HwWidget
         void BuildConnPage(TabPage p)
         {
             int y = 18;
-            Lbl(p, y, "数据源");
+            Lbl(p, y, L.T("lbl.source"));
             srcBox = new FlatCombo(new string[] { "auto", "panel", "direct" }) { Left = CX, Top = y, Width = 120, Height = 24 };
             srcBox.SelectedItem = cfg.source == "panel" || cfg.source == "direct" ? cfg.source : "auto";
             p.Controls.Add(srcBox);
-            Hint(p, 232, y, "panel=走本机面板，不顶号");
+            Hint(p, 232, y, L.T("hint.source"));
             y += 38;
 
-            Lbl(p, y, "管理地址");
+            Lbl(p, y, L.T("lbl.host"));
             hostBox = Tbx(p, y, 200, cfg.host);
-            Hint(p, 306, y, "一般是 192.168.8.1");
+            Hint(p, 306, y, L.T("hint.host"));
             y += 38;
-            Lbl(p, y, "登录用户");
+            Lbl(p, y, L.T("lbl.user"));
             userBox = Tbx(p, y, 200, cfg.user);
             y += 38;
-            Lbl(p, y, "登录密码");
+            Lbl(p, y, L.T("lbl.pwd"));
             pwdBox = Tbx(p, y, 200, cfg.password);
             pwdBox.UseSystemPasswordChar = true;
             y += 38;
-            Lbl(p, y, "面板地址");
+            Lbl(p, y, L.T("lbl.panel"));
             panelBox = Tbx(p, y, 340, cfg.panelUrl);
             y += 38;
-            Lbl(p, y, "刷新秒数");
+            Lbl(p, y, L.T("lbl.interval"));
             ivlBox = new SpinBox { Left = CX, Top = y, Width = 70, Height = 24, Minimum = 2, Maximum = 120, Increment = 1, Value = (decimal)Math.Max(2, Math.Min(120, cfg.interval)) };
             p.Controls.Add(ivlBox);
             y += 44;
-            savePwdBox = Chk(p, LX, y, "把密码保存到本机配置文件（不勾则每次启动需重新输入）", cfg.savePassword);
+            savePwdBox = Chk(p, LX, y, L.T("chk.savepwd"), cfg.savePassword);
         }
 
         // ---------------------------------------------------------------- 外观页
         void BuildLookPage(TabPage p)
         {
             int y = 18;
-            Lbl(p, y, "透明度");
+            Lbl(p, y, L.T("lbl.language"));
+            langBox = new FlatCombo(new string[] { "简体中文", "English", "繁體中文" }) { Left = CX, Top = y, Width = 130, Height = 24 };
+            langBox.SelectedIndex = cfg.language == "en" ? 1 : cfg.language == "zh-TW" ? 2 : 0;
+            p.Controls.Add(langBox);
+            y += 38;
+
+            Lbl(p, y, L.T("lbl.opacity"));
             alphaBar = new TrackBar { Left = CX - 4, Top = y - 6, Width = 200, Minimum = 25, Maximum = 100, TickStyle = TickStyle.None };
             alphaBar.Value = (int)Math.Round(cfg.alpha * 100);
             alphaLbl = new Label { Left = 300, Top = y + 4, Width = 46, AutoSize = false };
@@ -150,42 +154,42 @@ namespace HwWidget
             p.Controls.Add(alphaLbl);
             y += 48;
 
-            Lbl(p, y, "字号");
+            Lbl(p, y, L.T("lbl.fontsize"));
             sizeBox = new SpinBox { Left = CX, Top = y, Width = 60, Height = 24, Minimum = 9, Maximum = 30, Increment = 1, Value = cfg.fontSize };
             p.Controls.Add(sizeBox);
             y += 48;
 
-            p.Controls.Add(new Label { Text = "颜色", Left = LX, Top = y, AutoSize = true, Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold) });
+            p.Controls.Add(new Label { Text = L.T("grp.color"), Left = LX, Top = y, AutoSize = true, Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold) });
             y += 26;
-            for (int i = 0; i < ColorDefs.Length; i++)
+            for (int i = 0; i < ColorKeys.Length; i++)
             {
                 int col = i;
-                p.Controls.Add(new Label { Text = ColorDefs[col][1], Left = LX + col * 84, Top = y + 4, AutoSize = true });
-                var b = new ColorBox { Left = LX + col * 84 + 40, Top = y, Width = 26, Height = 24, Value = Hex(ColorOf(cfg, ColorDefs[col][0])) };
-                string key = ColorDefs[col][0];
+                p.Controls.Add(new Label { Text = L.T("color." + ColorKeys[col]), Left = LX + col * 84, Top = y + 4, AutoSize = true });
+                var b = new ColorBox { Left = LX + col * 84 + 40, Top = y, Width = 26, Height = 24, Value = Hex(ColorOf(cfg, ColorKeys[col])) };
+                string key = ColorKeys[col];
                 b.Click += delegate { PickColor(key, b); };
                 p.Controls.Add(b);
                 colorBtns[key] = b;
             }
             y += 42;
 
-            p.Controls.Add(new Label { Text = "行为", Left = LX, Top = y, AutoSize = true, Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold) });
+            p.Controls.Add(new Label { Text = L.T("grp.behavior"), Left = LX, Top = y, AutoSize = true, Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold) });
             y += 26;
-            topBox = Chk(p, LX + 4, y, "置顶显示", cfg.topmost);
-            borderBox = Chk(p, 240, y, "无边框样式", cfg.borderless);
+            topBox = Chk(p, LX + 4, y, L.T("chk.top"), cfg.topmost);
+            borderBox = Chk(p, 240, y, L.T("chk.border"), cfg.borderless);
             y += 30;
-            lockBox = Chk(p, LX + 4, y, "锁定位置（防误拖）", cfg.locked);
-            titleBox = Chk(p, 240, y, "显示标题行", cfg.showTitle);
+            lockBox = Chk(p, LX + 4, y, L.T("chk.lock"), cfg.locked);
+            titleBox = Chk(p, 240, y, L.T("chk.title"), cfg.showTitle);
         }
 
         // ---------------------------------------------------------------- 显示内容页
         void BuildRowsPage(TabPage p)
         {
-            for (int i = 0; i < Cfg.RowDefs.Length; i++)
+            for (int i = 0; i < Cfg.RowKeys.Length; i++)
             {
-                string[] d = Cfg.RowDefs[i];
-                var c = Chk(p, LX + (i % 2) * 230, 18 + (i / 2) * 32, d[1], cfg.rows[d[0]]);
-                rowBoxes[d[0]] = c;
+                string k = Cfg.RowKeys[i];
+                var c = Chk(p, LX + (i % 2) * 230, 18 + (i / 2) * 32, L.T("row." + k), cfg.rows[k]);
+                rowBoxes[k] = c;
             }
         }
 
@@ -236,6 +240,7 @@ namespace HwWidget
         void SaveAndClose()
         {
             cfg.source = string.IsNullOrEmpty(srcBox.SelectedItem) ? "auto" : srcBox.SelectedItem;
+            cfg.language = langBox.SelectedIndex == 1 ? "en" : langBox.SelectedIndex == 2 ? "zh-TW" : "zh-CN";
             cfg.host = string.IsNullOrEmpty(hostBox.Text.Trim()) ? "192.168.8.1" : hostBox.Text.Trim();
             cfg.user = string.IsNullOrEmpty(userBox.Text.Trim()) ? "admin" : userBox.Text.Trim();
             cfg.password = pwdBox.Text;
@@ -318,6 +323,12 @@ namespace HwWidget
                 for (int i = 0; i < items.Length; i++) if (items[i] == value) { sel = i; break; }
                 Invalidate();
             }
+        }
+
+        public int SelectedIndex
+        {
+            get { return sel; }
+            set { sel = value; Invalidate(); }
         }
 
         void CloseDrop()

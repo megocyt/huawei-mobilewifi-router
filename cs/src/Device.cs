@@ -19,7 +19,7 @@ namespace HwWidget
         public long ts;
 
         public string net = "-";          // LTE / 5G NR
-        public string conn = "未连接";
+        public string conn = "";
         public bool connected;
         public string carrier = "";
         public int sigBars, sigMax = 5;
@@ -281,7 +281,7 @@ namespace HwWidget
 
         Dictionary<string, object> PostInner(string path, Dictionary<string, object> body, bool retry)
         {
-            if (string.IsNullOrEmpty(token) && !RefreshToken()) return Err("无法获取 CSRF token");
+            if (string.IsNullOrEmpty(token) && !RefreshToken()) return Err(L.T("err.csrf"));
             string xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><request>" + ToXml(body) + "</request>";
             var r = Request(path, xml, true);
             token = null;                                     // 一次性，用完即废
@@ -341,17 +341,17 @@ namespace HwWidget
         {
             switch (code)
             {
-                case "100002": return "设备不支持该接口";
-                case "100003": return "需要登录（会话无效或已过期）";
-                case "100005": return "请求参数错误";
-                case "100006": return "CSRF token 校验失败";
-                case "108005": return "登录过于频繁，被设备限流";
-                case "108006": return "认证失败（密码错误或挑战失效）";
-                case "113055": return "短信操作被拒（已读过 / 下标不存在）";
-                case "125001": return "账号被锁定";
-                case "125002": return "会话已注销";
-                case "125003": return "会话状态失效，需重开页面";
-                default: return "设备返回错误";
+                case "100002": return L.T("e.100002");
+                case "100003": return L.T("e.100003");
+                case "100005": return L.T("e.100005");
+                case "100006": return L.T("e.100006");
+                case "108005": return L.T("e.108005");
+                case "108006": return L.T("e.108006");
+                case "113055": return L.T("e.113055");
+                case "125001": return L.T("e.125001");
+                case "125002": return L.T("e.125002");
+                case "125003": return L.T("e.125003");
+                default: return L.T("e.other");
             }
         }
 
@@ -415,7 +415,7 @@ namespace HwWidget
                     loggedIn = true;
                     return true;
                 }
-                if (!RefreshToken()) { Block("无法获取 token"); return false; }
+                if (!RefreshToken()) { Block(L.T("err.token")); return false; }
                 string first = NewNonce();
                 var ch = Post("/api/user/challenge_login", Dict(
                     "username", user, "firstnonce", first, "mode", 1));
@@ -425,19 +425,19 @@ namespace HwWidget
                 int iter;
                 if (!int.TryParse(Str(ch, "iterations"), out iter) || salt.Length < 8 || serverNonce.Length < 8)
                 {
-                    Block("登录挑战响应异常");
+                    Block(L.T("err.challenge"));
                     return false;
                 }
                 string proof, expect;
                 Scram(password, salt, iter, first, serverNonce, out proof, out expect);
-                if (!RefreshToken()) { Block("无法获取 token"); return false; }
+                if (!RefreshToken()) { Block(L.T("err.token")); return false; }
                 var au = Post("/api/user/authentication_login", Dict("clientproof", proof, "finalnonce", serverNonce));
                 fail = Fail(au);
                 if (fail != null) { Block(fail); return false; }
                 string gotSig = Str(au, "serversignature");
                 if (gotSig.Length > 0 && !string.Equals(gotSig, expect, StringComparison.OrdinalIgnoreCase))
                 {
-                    Block("服务器签名校验不通过");
+                    Block(L.T("err.signature"));
                     return false;
                 }
                 loggedIn = true;
@@ -608,15 +608,15 @@ namespace HwWidget
                 {
                     if (FillFromPanel(s)) return s;
                     panelOk = null;                       // 拉取失败，下轮重新探测
-                    if (source == "panel") { s.err = "面板不可用"; s.ok = false; return s; }
+                    if (source == "panel") { s.err = L.T("err.panel"); s.ok = false; return s; }
                 }
                 else if (source == "auto") panelOk = panelOk ?? false;
             }
             if (!Login(false))
             {
                 s.loggedIn = false;
-                s.err = string.IsNullOrEmpty(errText) ? "登录失败" : errText;
-                if (WaitSeconds > 0) s.err += "，" + WaitSeconds + " 秒后重试";
+                s.err = string.IsNullOrEmpty(errText) ? L.T("err.login") : errText;
+                if (WaitSeconds > 0) s.err += string.Format(L.T("fmt.retry"), WaitSeconds);
             }
             var status = Get("/api/monitoring/status");
             var traffic = Get("/api/monitoring/traffic-statistics");
@@ -762,7 +762,7 @@ namespace HwWidget
                       Dictionary<string, object> signal)
         {
             s.connected = Str(status, "ConnectionStatus") == "901";
-            s.conn = s.connected ? "已连接" : "未连接";
+            s.conn = s.connected ? L.T("v.connected") : L.T("v.disconnected");
             s.net = Map(NET_EX, Str(status, "CurrentNetworkTypeEx"));
             if (s.net == Str(status, "CurrentNetworkTypeEx")) s.net = Map(NET_T, Str(status, "CurrentNetworkType"));
             int bars, mx;
@@ -894,9 +894,11 @@ namespace HwWidget
         {
             if (sec < 0) return "-";
             long d = sec / 86400, h = sec % 86400 / 3600, m = sec % 3600 / 60;
-            if (d > 0) return string.Format("{0}天{1}小时", d, h);
-            if (h > 0) return string.Format("{0}小时{1}分", h, m);
-            return string.Format("{0}分{1}秒", m, sec % 60);
+            string ud = L.T("u.day"), uh = L.T("u.hour"), um = L.T("u.minute"), us = L.T("u.second");
+            string sp = L.Lang == "zh-CN" || L.Lang == "zh-TW" ? "" : " ";
+            if (d > 0) return d + ud + sp + h + uh;
+            if (h > 0) return h + uh + sp + m + um;
+            return m + um + sp + (sec % 60) + us;
         }
 
         // ---------------------------------------------------------------- 短信 / 操作
@@ -938,9 +940,9 @@ namespace HwWidget
             return fail ?? "ok";
         }
 
-        public string Reboot() { return Act("/api/device/control", Dict("Control", 1), "重启指令已下发"); }
-        public string ClearTraffic() { return Act("/api/monitoring/clear-traffic", Dict("ClearTraffic", 1), "已清零历史流量统计"); }
-        public string SetDataSwitch(bool on) { return Act("/api/dialup/mobile-dataswitch", Dict("dataswitch", on ? "1" : "0"), on ? "已开启移动数据" : "已关闭移动数据"); }
+        public string Reboot() { return Act("/api/device/control", Dict("Control", 1), L.T("err.reboot")); }
+        public string ClearTraffic() { return Act("/api/monitoring/clear-traffic", Dict("ClearTraffic", 1), L.T("err.cleared")); }
+        public string SetDataSwitch(bool on) { return Act("/api/dialup/mobile-dataswitch", Dict("dataswitch", on ? "1" : "0"), on ? L.T("err.don") : L.T("err.doff")); }
         public bool DataOn()
         {
             var d = Get("/api/dialup/mobile-dataswitch");
@@ -957,7 +959,7 @@ namespace HwWidget
                             "MonthThreshold", string.IsNullOrEmpty(threshold) ? Str(cur, "MonthThreshold") : threshold,
                             "SetMonthData", cur.ContainsKey("SetMonthData") ? Str(cur, "SetMonthData") : "1");
             var r = Post("/api/monitoring/start_date", body);
-            return Fail(r) ?? "套餐设置已保存";
+            return Fail(r) ?? L.T("err.planset");
         }
 
         string Act(string path, Dictionary<string, object> body, string okMsg)

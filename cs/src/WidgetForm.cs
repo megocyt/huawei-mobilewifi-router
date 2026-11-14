@@ -58,7 +58,7 @@ namespace HwWidget
         {
             cfg = Cfg.Load();
             SuspendLayout();
-            Text = "华为随身 WiFi";
+            Text = L.T("tray.title");
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             ShowInTaskbar = false;
@@ -128,7 +128,17 @@ namespace HwWidget
             fValue = new Font(cfg.fontFam, size, FontStyle.Regular);
             fMono = new Font("Consolas", size - 0.5f < 8f ? 8f : size - 0.5f, FontStyle.Regular);
             rowH = Math.Max(Math.Max(fValue.Height, fLabel.Height), fMono.Height);
-            labelW = TextRenderer.MeasureText("套餐", fLabel).Width + 2;
+            string[] probes = { L.T("lbl.network"), L.T("lbl.signal"), L.T("lbl.rate"), L.T("lbl.plan"),
+                                L.T("lbl.traffic"), L.T("lbl.hosts"), L.T("lbl.battery"), L.T("lbl.local"),
+                                L.T("lbl.wan"), L.T("lbl.uptime"), L.T("lbl.sms"), L.T("lbl.clock"),
+                                L.T("lbl.status"), L.T("lbl.detail"), L.T("lbl.num") };
+            int lw = 0;
+            foreach (string t in probes)
+            {
+                int w2 = TextRenderer.MeasureText(t, fLabel).Width;
+                if (w2 > lw) lw = w2;
+            }
+            labelW = lw + 2;
         }
 
         void ApplyChrome()
@@ -199,18 +209,18 @@ namespace HwWidget
             Snap s = snap;
             if (s == null)
             {
-                outRows.Add(new Row { key = "conn", label = "状态", value = "读取失败", color = Col("bad") });
-                outRows.Add(new Row { key = "err", label = "详情", value = Trunc(err, 34), color = Col("fg") });
+                outRows.Add(new Row { key = "conn", label = L.T("lbl.status"), value = L.T("v.fail"), color = Col("bad") });
+                outRows.Add(new Row { key = "err", label = L.T("lbl.detail"), value = Trunc(err, 34), color = Col("fg") });
                 return outRows;
             }
             if (!string.IsNullOrEmpty(err))
-                outRows.Add(new Row { key = "err", label = "提醒", value = "⚠ " + Trunc(err, 28), color = Col("bad") });
+                outRows.Add(new Row { key = "err", label = L.T("lbl.status"), value = "⚠ " + Trunc(err, 28), color = Col("bad") });
 
             if (On("conn"))
                 outRows.Add(new Row
                 {
-                    key = "conn", label = "网络",
-                    value = ((s.net ?? "-") + " " + (s.carrier ?? "").Replace("中国", "")).Trim(),
+                    key = "conn", label = L.T("lbl.network"),
+                    value = ((s.net ?? "-") + " " + L.Carrier(s.carrier)).Trim(),
                     color = Col(s.connected ? "accent" : "bad")
                 });
             if (On("signal"))
@@ -219,7 +229,7 @@ namespace HwWidget
                 string lvl = s.rsrpLevel;
                 outRows.Add(new Row
                 {
-                    key = "signal", label = "信号", value = v, kind = Kind.Signal,
+                    key = "signal", label = L.T("lbl.signal"), value = v, kind = Kind.Signal,
                     bars = s.sigBars, barMax = Math.Max(1, s.sigMax),
                     color = Col(lvl == "优" || lvl == "良" ? "accent" : lvl == "中" ? "warn" : "bad")
                 });
@@ -227,7 +237,7 @@ namespace HwWidget
             if (On("rate"))
                 outRows.Add(new Row
                 {
-                    key = "rate", label = "速率",
+                    key = "rate", label = L.T("lbl.rate"),
                     value = "↓" + Device.HumanRate(s.rateDown).Replace(" ", "") + "  ↑" + Device.HumanRate(s.rateUp).Replace(" ", ""),
                     color = Col("fg"), mono = true
                 });
@@ -236,10 +246,10 @@ namespace HwWidget
                 string u = Device.HumanBytes(s.planUsed, 1).Replace(" ", "");
                 string lim = (s.planLimitRaw ?? "").Replace(" ", "");
                 string v = TailUnit(u) == TailUnit(lim) ? NumPart(u) + "/" + lim : u + "/" + lim;
-                if (s.planDaysLeft >= 0) v += " 剩" + s.planDaysLeft + "天";
+                if (s.planDaysLeft >= 0) v += " " + string.Format(L.T("fmt.daysleft"), s.planDaysLeft);
                 outRows.Add(new Row
                 {
-                    key = "plan", label = "套餐", value = v, kind = Kind.Plan,
+                    key = "plan", label = L.T("lbl.plan"), value = v, kind = Kind.Plan,
                     frac = Math.Max(0, Math.Min(100, s.planPercent)) / 100.0,
                     color = Col(s.planOverLimit ? "bad" : s.planOverThreshold ? "warn" : "accent"),
                     tail = s.planPercent.ToString("0.#", CultureInfo.InvariantCulture) + "%"
@@ -248,12 +258,12 @@ namespace HwWidget
             if (On("traffic"))
                 outRows.Add(new Row
                 {
-                    key = "traffic", label = "流量",
-                    value = "今日 " + Device.HumanBytes(s.dayUsed, 1).Replace(" ", "") + " · 本月 " + Device.HumanBytes(s.monthDown + s.monthUp, 1).Replace(" ", ""),
+                    key = "traffic", label = L.T("lbl.traffic"),
+                    value = L.T("v.today") + " " + Device.HumanBytes(s.dayUsed, 1).Replace(" ", "") + " · " + L.T("v.month") + " " + Device.HumanBytes(s.monthDown + s.monthUp, 1).Replace(" ", ""),
                     color = Col("fg")
                 });
             if (On("hosts"))
-                outRows.Add(new Row { key = "hosts", label = "终端", value = s.hostsActive + " / " + s.hostsTotal, color = Col("fg"), mono = true });
+                outRows.Add(new Row { key = "hosts", label = L.T("lbl.hosts"), value = s.hostsActive + " / " + s.hostsTotal, color = Col("fg"), mono = true });
             if (On("battery") && s.battery != "-")
             {
                 double pct;
@@ -261,23 +271,23 @@ namespace HwWidget
                 bool low = pct <= 20 && !s.charging;
                 outRows.Add(new Row
                 {
-                    key = "battery", label = "电量", value = s.battery + (s.charging ? " 充电中" : ""),
+                    key = "battery", label = L.T("lbl.battery"), value = s.battery + (s.charging ? " " + L.T("v.charging") : ""),
                     kind = Kind.Battery, frac = pct / 100.0, color = Col(low ? "warn" : "accent"), charging = s.charging
                 });
             }
             if (On("msisdn") && !string.IsNullOrEmpty(s.msisdn) && s.msisdn != "-")
-                outRows.Add(new Row { key = "msisdn", label = "号码", value = s.msisdn, color = Col("fg"), mono = true });
+                outRows.Add(new Row { key = "msisdn", label = L.T("lbl.num"), value = s.msisdn, color = Col("fg"), mono = true });
             if (On("ip"))
             {
-                outRows.Add(new Row { key = "ip", label = "本机", value = LocalIp(cfg.host), color = Col("fg"), mono = true });
-                outRows.Add(new Row { key = "ip", label = "WAN", value = s.wanIp, color = Col("fg"), mono = true });
+                outRows.Add(new Row { key = "ip", label = L.T("lbl.local"), value = LocalIp(cfg.host), color = Col("fg"), mono = true });
+                outRows.Add(new Row { key = "ip2", label = L.T("lbl.wan"), value = s.wanIp, color = Col("fg"), mono = true });
             }
             if (On("uptime") && s.uptime > 0)
-                outRows.Add(new Row { key = "uptime", label = "运行", value = Device.HumanDur(s.uptime), color = Col("fg") });
+                outRows.Add(new Row { key = "uptime", label = L.T("lbl.uptime"), value = Device.HumanDur(s.uptime), color = Col("fg") });
             if (On("sms") && s.smsUnread > 0)
-                outRows.Add(new Row { key = "sms", label = "短信", value = "未读 " + s.smsUnread + " 条", color = Col("warn") });
+                outRows.Add(new Row { key = "sms", label = L.T("lbl.sms"), value = string.Format(L.T("fmt.smsunread"), s.smsUnread), color = Col("warn") });
             if (On("clock"))
-                outRows.Add(new Row { key = "clock", label = "时间", value = DateTime.Now.ToString("HH:mm:ss"), color = Col("fg"), mono = true });
+                outRows.Add(new Row { key = "clock", label = L.T("lbl.clock"), value = DateTime.Now.ToString("HH:mm:ss"), color = Col("fg"), mono = true });
             return outRows;
         }
 
@@ -543,8 +553,9 @@ namespace HwWidget
                         break;
                     }
                     case "ip":
+                    case "ip2":
                     {
-                        if (r.label == "本机")
+                        if (r.key == "ip")
                         {
                             // 显示器
                             g.DrawRectangle(pen, cx - 8, cy - 6, 16, 10);
@@ -621,7 +632,7 @@ namespace HwWidget
                             Relayout();
                             UpdateTrayTip();
                             if (!string.IsNullOrEmpty(ce) && ce != lastErr && tray != null)
-                                tray.ShowBalloonTip(3000, "随身 WiFi 悬浮窗", Trunc(ce, 90), ToolTipIcon.Warning);
+                                tray.ShowBalloonTip(3000, L.T("tray.balloon"), Trunc(ce, 90), ToolTipIcon.Warning);
                             lastErr = ce;
                         }));
                 }
@@ -633,12 +644,12 @@ namespace HwWidget
         void UpdateTrayTip()
         {
             if (tray == null) return;
-            var sb = new StringBuilder("华为随身 WiFi");
+            var sb = new StringBuilder(L.T("tray.title"));
             if (snap != null)
             {
                 sb.Append(" · ").Append(snap.net).Append(' ').Append(snap.conn);
-                if (snap.planLimit > 0) sb.Append(" · 套餐 ").Append(snap.planPercent.ToString("0", CultureInfo.InvariantCulture)).Append('%');
-                sb.Append(" · 终端 ").Append(snap.hostsActive);
+                if (snap.planLimit > 0) sb.Append(" · ").Append(L.T("lbl.plan")).Append(' ').Append(snap.planPercent.ToString("0", CultureInfo.InvariantCulture)).Append('%');
+                sb.Append(" · ").Append(L.T("lbl.hosts")).Append(' ').Append(snap.hostsActive);
             }
             if (!string.IsNullOrEmpty(err)) sb.Append(" · ⚠").Append(Trunc(err, 20));
             string tip = sb.ToString();
@@ -711,7 +722,7 @@ namespace HwWidget
             double a = cfg.alpha + (delta > 0 ? 0.05 : -0.05);
             cfg.alpha = Math.Round(Math.Max(0.25, Math.Min(1.0, a)), 2);
             Opacity = cfg.alpha;
-            hint = "背景透明度 " + (int)Math.Round(cfg.alpha * 100) + "%";
+            hint = string.Format(L.T("hint.alpha"), (int)Math.Round(cfg.alpha * 100));
             hintTimer.Stop(); hintTimer.Start();
             saveTimer.Stop(); saveTimer.Start();
             Invalidate();
@@ -750,7 +761,7 @@ namespace HwWidget
                 case "lock":
                     cfg.locked = !cfg.locked;
                     cfg.Save();
-                    hint = cfg.locked ? "位置已锁定" : "位置已解锁";
+                    hint = cfg.locked ? L.T("hint.locked") : L.T("hint.unlocked");
                     hintTimer.Stop(); hintTimer.Start();
                     RebuildMenu();
                     Invalidate();
@@ -766,6 +777,7 @@ namespace HwWidget
                 if (f.ShowDialog(this) == DialogResult.OK)
                 {
                     cfg = f.Result;
+                    L.Lang = cfg.language;
                     lock (devLock)
                     {
                         dev.Logout();
@@ -798,15 +810,15 @@ namespace HwWidget
             m.Renderer = new DarkMenuRenderer();
             m.ShowImageMargin = false;
             m.Padding = new Padding(4, 6, 4, 6);
-            Add(m, "显示 / 隐藏悬浮窗", "toggle");
-            Add(m, "设置…", "settings");
-            Add(m, "立即刷新", "refresh");
-            Add(m, "打开网页面板", "panel");
+            Add(m, L.T("menu.toggle"), "toggle");
+            Add(m, L.T("menu.settings"), "settings");
+            Add(m, L.T("menu.refresh"), "refresh");
+            Add(m, L.T("menu.panel"), "panel");
             m.Items.Add(new ToolStripSeparator());
-            var t = Add(m, (cfg.topmost ? "取消置顶" : "保持置顶"), "top"); t.Tag = "top";
-            var l = Add(m, (cfg.locked ? "解锁位置" : "锁定位置"), "lock"); l.Tag = "lock";
+            var t = Add(m, (cfg.topmost ? L.T("menu.topoff") : L.T("menu.topon")), "top"); t.Tag = "top";
+            var l = Add(m, (cfg.locked ? L.T("menu.unlock") : L.T("menu.lock")), "lock"); l.Tag = "lock";
             m.Items.Add(new ToolStripSeparator());
-            Add(m, "退出", "quit");
+            Add(m, L.T("menu.quit"), "quit");
             return m;
         }
 

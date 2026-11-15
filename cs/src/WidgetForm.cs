@@ -28,7 +28,9 @@ namespace HwWidget
 
         NotifyIcon tray;
         ContextMenuStrip menu;
-        System.Windows.Forms.Timer clockTimer, hintTimer, saveTimer;
+        System.Windows.Forms.Timer clockTimer, hintTimer, saveTimer, trayClickTimer;
+        SettingsForm settingsForm;
+        long lastTrayDoubleClickTicks;
         Thread poll;
         volatile bool stopPoll;
         readonly AutoResetEvent wake = new AutoResetEvent(false);
@@ -80,7 +82,13 @@ namespace HwWidget
             tray.Icon = TrayIcon.Make();
             tray.Visible = true;
             tray.MouseClick += OnTrayClick;
-            tray.MouseDoubleClick += delegate { ShowSettings(); };
+            tray.MouseDoubleClick += OnTrayDoubleClick;
+
+            // 区分单击与双击：NotifyIcon 双击时会先触发一次 MouseClick，直接 toggle 会
+            // 让“双击开设置”额外附带“隐藏悬浮窗”副作用。延迟 DoubleClickTime + 50ms 后
+            // 才执行 toggle；期间如果 MouseDoubleClick 到达则取消 toggle。
+            trayClickTimer = new System.Windows.Forms.Timer { Interval = SystemInformation.DoubleClickTime + 50 };
+            trayClickTimer.Tick += delegate { trayClickTimer.Stop(); Do("toggle"); };
 
             clockTimer = new System.Windows.Forms.Timer { Interval = 1000 };
             clockTimer.Tick += OnClockTick;
@@ -950,9 +958,28 @@ namespace HwWidget
 
         void ShowSettings()
         {
+            // 防止重入：ShowDialog 开时内部仍会派发 tray 事件，不守卫会弹 N 个设置窗。
+            // 已存在时直接激活（处理“双击无反应”的错觉，因为可能已开但被置顶窗口遮位）。
+            if (settingsForm != null && !settingsForm.IsDisposed)
+            {
+                if (settingsForm.WindowState == FormWindowState.Minimized)
+                    settingsForm.WindowState = FormWindowState.Normal;
+                settingsForm.Activate();
+                settingsForm.BringToFront();
+                return;
+            }
             using (var f = new SettingsForm(cfg))
             {
-                if (f.ShowDialog(this) == DialogResult.OK)
+                settingsForm = f;
+                int hr;
+                try
+                {
+                    // 不传 owner：WidgetForm 在 toggle 隐藏后作为 owner 会造成子窗焦点错乱，
+                    // 表现为“设置窗不可点击”。无 owner 的 ShowDialog 仍为应用内部模态。
+                    hr = (int)f.ShowDialog();
+                }
+                finally { settingsForm = null; }
+                if ((DialogResult)hr == DialogResult.OK)
                 {
                     cfg = f.Result;
                     L.Lang = cfg.language;
@@ -1053,7 +1080,25 @@ namespace HwWidget
 
         void OnTrayClick(object sender, MouseEventArgs e)
         {
-            if (e.Button == MouseButtons.Left) Do("toggle");
+            if (e.Button != MouseButtons.Left) return;
+            // WinForms NotifyIcon 双击时事件顺序为：
+            //   MouseClick(1st up) → MouseDoubleClick(2nd down) → MouseClick(2nd up)
+            // 处理完双击后紧跟的这一次 MouseClick 不能重启 toggle 定时器，否则
+            // 550ms 后会额外触发一次 toggle，表现为“双击时悬浮窗会隐藏/显示”。
+            long now = DateTime.UtcNow.Ticks;
+            if (now - lastTrayDoubleClickTicks <= TimeSpan.TicksPerMillisecond * 500) return;
+            trayClickTimer.Stop();
+            trayClickTimer.Start();
+        }
+
+        void OnTrayDoubleClick(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                lastTrayDoubleClickTicks = DateTime.UtcNow.Ticks;
+                trayClickTimer.Stop();      // 取消延迟中的单击 toggle
+                ShowSettings();
+            }
         }
 
         protected override void OnShown(EventArgs e)

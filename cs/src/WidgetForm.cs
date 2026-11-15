@@ -910,14 +910,17 @@ namespace HwWidget
                     break;
                 case "settings": ShowSettings(); break;
                 case "refresh":
-                    lock (devLock) { dev.ForgetSession(); }
+                    // ForgetSession 很轻量，但 devLock 会被 stuck 的 Sample 长持；抢不到锁就跳过，
+                    // 下一次采样会因会话死自动重登。
+                    try { if (Monitor.TryEnter(devLock, 100)) { try { dev.ForgetSession(); } finally { Monitor.Exit(devLock); } } } catch { }
                     wake.Set();
                     break;
                 case "manage":
                     try
                     {
-                        string url;
-                        lock (devLock) url = dev != null ? dev.baseUrl : null;
+                        // baseUrl 在 NewDevice 后不再变更，直读 dev 引用即可（引用读为原子操作）。
+                        var d = dev;
+                        string url = d != null ? d.baseUrl : null;
                         if (string.IsNullOrEmpty(url))
                         {
                             string h = (cfg.host ?? "").Trim();
@@ -953,10 +956,24 @@ namespace HwWidget
                 {
                     cfg = f.Result;
                     L.Lang = cfg.language;
-                    lock (devLock)
+                    // 设备不可达时 devLock 可能被 stuck 的 Sample 长持，这里不能直接 lock，
+                    // 否则设置面板确定后 UI 会假死数十秒。抢不到锁时把 Logout+换 dev 排入后台。
+                    bool taken = false;
+                    try { taken = Monitor.TryEnter(devLock, 300); } catch { }
+                    if (taken)
                     {
-                        dev.Logout();
-                        dev = NewDevice();
+                        try { dev.Logout(); dev = NewDevice(); }
+                        finally { Monitor.Exit(devLock); }
+                    }
+                    else
+                    {
+                        var old = dev;
+                        var nd = NewDevice();
+                        ThreadPool.QueueUserWorkItem(delegate
+                        {
+                            lock (devLock) { try { old.Logout(); } catch { } dev = nd; }
+                            wake.Set();
+                        });
                     }
                     localIp = "";
                     ApplyChrome();
@@ -972,7 +989,17 @@ namespace HwWidget
             stopPoll = true;
             wake.Set();
             try { if (poll != null) poll.Join(2000); } catch { }
-            lock (devLock) if (dev != null) dev.Logout();
+            // 设备不可达时 dev.Sample() 会串行发十几个 8s 超时的 HTTP，整段持 devLock 数十秒；
+            // 若 UI 线程在此处 lock(devLock){ dev.Logout(); } 会跟着假死。
+            // 拿不到锁就跳过登出（poll 线程是后台线程，进程结束时会被强杀），
+            // 保证托盘退出菜单一点就退出。
+            bool taken = false;
+            try { taken = Monitor.TryEnter(devLock, 200); } catch { }
+            if (taken)
+            {
+                try { if (dev != null) dev.Logout(); } catch { }
+                finally { Monitor.Exit(devLock); }
+            }
             SavePos();
             if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }
             if (hostsPopup != null) { hostsPopup.Close(); hostsPopup = null; }

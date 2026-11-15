@@ -36,7 +36,7 @@ namespace HwWidget
 
         Font fTitle, fLabel, fValue, fMono;
         int rowH, labelW;                       // 统一行高与标签列宽，保证两列对齐
-        const int W = 356, Pad = 14, Rad = 12, RowGap = 4, IconW = 22;
+        const int W = 396, Pad = 14, Rad = 12, RowGap = 4, IconW = 22;
         Point dragOff;
         bool dragging;
         static string localIp = "";
@@ -124,9 +124,9 @@ namespace HwWidget
         {
             float size = Math.Max(8f, cfg.fontSize);
             fTitle = new Font(cfg.fontFam, Math.Max(7.5f, size - 3f), FontStyle.Regular);
-            fLabel = new Font(cfg.fontFam, Math.Max(7.5f, size - 2.5f), FontStyle.Regular);
+            fLabel = new Font(cfg.fontFam, size, FontStyle.Regular);
             fValue = new Font(cfg.fontFam, size, FontStyle.Regular);
-            fMono = new Font("Consolas", size - 0.5f < 8f ? 8f : size - 0.5f, FontStyle.Regular);
+            fMono = new Font("Consolas", size, FontStyle.Regular);
             rowH = Math.Max(Math.Max(fValue.Height, fLabel.Height), fMono.Height);
             string[] probes = { L.T("lbl.network"), L.T("lbl.signal"), L.T("lbl.rate"), L.T("lbl.plan"),
                                 L.T("lbl.traffic"), L.T("lbl.hosts"), L.T("lbl.battery"), L.T("lbl.local"),

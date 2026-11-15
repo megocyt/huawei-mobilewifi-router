@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -186,7 +187,43 @@ namespace HwWidget
             Opacity = Math.Max(0.25, Math.Min(1.0, cfg.alpha));
             FormBorderStyle = cfg.borderless ? FormBorderStyle.None : FormBorderStyle.FixedDialog;
             BackColor = Parse(cfg.bg);
+            ApplyClickThrough();
             Relayout();
+        }
+
+        // 穿透模式：给窗口加 WS_EX_TRANSPARENT 使鼠标命中测试落到下层窗口（点击/滚轮均穿透）。
+        // 开启后悬浮窗自身收不到任何鼠标事件，因此只能通过托盘图标右键菜单关闭。
+        const int GWL_EXSTYLE = -20;
+        const int WS_EX_TRANSPARENT = 0x00000020;
+        const int WS_EX_LAYERED = 0x00080000;
+        const uint LWA_ALPHA = 0x2;
+        [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+        [DllImport("user32.dll")] static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+
+        void ApplyClickThrough()
+        {
+            if (!IsHandleCreated) return;
+            int ex = GetWindowLong(Handle, GWL_EXSTYLE);
+            if (cfg.clickThrough)
+            {
+                if ((ex & (WS_EX_LAYERED | WS_EX_TRANSPARENT)) != (WS_EX_LAYERED | WS_EX_TRANSPARENT))
+                    SetWindowLong(Handle, GWL_EXSTYLE, ex | WS_EX_LAYERED | WS_EX_TRANSPARENT);
+                // 直接按当前透明度设置分层属性，保证加 layered 后窗口仍可见（不依赖 WinForms 的 Opacity 缓存）
+                byte a = (byte)(Math.Max(0.25, Math.Min(1.0, cfg.alpha)) * 255);
+                SetLayeredWindowAttributes(Handle, 0, a, LWA_ALPHA);
+            }
+            else if ((ex & WS_EX_TRANSPARENT) != 0)
+            {
+                SetWindowLong(Handle, GWL_EXSTYLE, ex & ~WS_EX_TRANSPARENT);
+                Opacity = Math.Max(0.25, Math.Min(1.0, cfg.alpha));   // 交回 WinForms 管理透明度
+            }
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            ApplyClickThrough();      // 句柄（重）建后扩展样式会丢失，需重新应用
         }
 
         static Color Parse(string hex)
@@ -416,6 +453,16 @@ namespace HwWidget
             using (var p = Round(rc, Rad))
             using (var pen = new Pen(Blend(bg, Color.White, 0.22f), 1))
                 g.DrawPath(pen, p);
+            if (cfg.clickThrough)
+            {
+                // 穿透模式虚线描边：语言无关地提示当前窗口对鼠标“惰性可穿透”
+                using (var p = Round(new Rectangle(rc.X + 2, rc.Y + 2, rc.Width - 4, rc.Height - 4), Rad))
+                using (var pen = new Pen(Blend(bg, Col("warn"), 0.92f), 2))
+                {
+                    pen.DashStyle = DashStyle.Dash;
+                    g.DrawPath(pen, p);
+                }
+            }
 
             int y;
             if (cfg.showTitle)
@@ -1002,6 +1049,15 @@ namespace HwWidget
                     RebuildMenu();
                     Invalidate();
                     break;
+                case "click":
+                    cfg.clickThrough = !cfg.clickThrough;
+                    cfg.Save();
+                    ApplyClickThrough();
+                    hint = cfg.clickThrough ? L.T("hint.clickon") : L.T("hint.clickoff");
+                    hintTimer.Stop(); hintTimer.Start();
+                    RebuildMenu();
+                    Invalidate();
+                    break;
                 case "quit": Quit(); break;
             }
         }
@@ -1098,6 +1154,7 @@ namespace HwWidget
             m.Items.Add(new ToolStripSeparator());
             var t = Add(m, (cfg.topmost ? L.T("menu.topoff") : L.T("menu.topon")), "top"); t.Tag = "top";
             var l = Add(m, (cfg.locked ? L.T("menu.unlock") : L.T("menu.lock")), "lock"); l.Tag = "lock";
+            var ct = Add(m, (cfg.clickThrough ? L.T("menu.clickoff") : L.T("menu.clickon")), "click"); ct.Tag = "click";
             m.Items.Add(new ToolStripSeparator());
             Add(m, L.T("menu.quit"), "quit");
             return m;

@@ -37,6 +37,7 @@ namespace HwWidget
         public bool topmost = true;
         public bool borderless = true;
         public bool locked = false;
+        public bool clickThrough = false;                       // 穿透模式：鼠标点击落到下层窗口
         public bool showTitle = true;
         public bool savePassword = true;
         public int posX = int.MinValue, posY = int.MinValue;
@@ -101,6 +102,7 @@ namespace HwWidget
             c.topmost = Bool(d, "topmost", c.topmost);
             c.borderless = Bool(d, "borderless", c.borderless);
             c.locked = Bool(d, "locked", c.locked);
+            c.clickThrough = Bool(d, "click_through", c.clickThrough);
             c.showTitle = Bool(d, "show_title", c.showTitle);
             c.savePassword = Bool(d, "save_password", c.savePassword);
             object rowsObj;
@@ -157,7 +159,8 @@ namespace HwWidget
             }
             sb.Append("},\n");
             PutBool(sb, "topmost", topmost); PutBool(sb, "borderless", borderless);
-            PutBool(sb, "locked", locked); PutBool(sb, "show_title", showTitle);
+            PutBool(sb, "locked", locked); PutBool(sb, "click_through", clickThrough);
+            PutBool(sb, "show_title", showTitle);
             PutBool(sb, "save_password", savePassword);
             if (posX == int.MinValue) sb.Append(" \"pos\": null\n");
             else sb.Append(" \"pos\": [").Append(posX).Append(", ").Append(posY).Append("]\n");

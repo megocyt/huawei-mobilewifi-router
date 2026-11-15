@@ -362,10 +362,16 @@ namespace HwWidget
             lb.Items.AddRange(items);
             lb.Highlight = SelectedItem;
             int full = items.Length * lb.ItemHeight + 2;
-            scrollMode = full > MaxPopH;
-            int h = scrollMode ? MaxPopH : full;
+            // 弹层高度受页面可用空间限制：优先向下，空间不足则向上翻，仍不够则缩短+滚动
+            int below = page.ClientSize.Height - Bottom - 6;
+            int above = Top - 6;
+            int h, y;
+            if (full <= MaxPopH && full <= below) { h = full; y = Bottom; }
+            else if (below >= above) { h = Math.Min(Math.Min(below, MaxPopH), full); y = Bottom; }
+            else { h = Math.Min(Math.Min(above, MaxPopH), full); y = Top - h; }
+            scrollMode = full > h;
             host.BringToFront();
-            host.SetBounds(Left, Bottom, Width, h);
+            host.SetBounds(Left, y, Width, h);
             lb.SetBounds(1, 1, scrollMode ? Width - 2 : Width - 13, h - 2);
             host.Visible = true;
             Invalidate();

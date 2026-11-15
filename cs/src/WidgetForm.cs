@@ -77,7 +77,7 @@ namespace HwWidget
             tray.MouseDoubleClick += delegate { ShowSettings(); };
 
             clockTimer = new System.Windows.Forms.Timer { Interval = 1000 };
-            clockTimer.Tick += delegate { if (snap != null) Invalidate(); };
+            clockTimer.Tick += OnClockTick;
             clockTimer.Start();
             hintTimer = new System.Windows.Forms.Timer { Interval = 1600 };
             hintTimer.Tick += delegate { hint = ""; hintTimer.Stop(); Invalidate(); };
@@ -103,6 +103,21 @@ namespace HwWidget
             lock (devLock) dev = NewDevice();
             poll = new Thread(PollLoop) { IsBackground = true };
             poll.Start();
+        }
+
+        /// <summary>行列表只在采样时重建，clock 行的 value 到下一轮采样前不会变；
+        /// 每秒重新写入当前时间，时间看起来才会一秒一跳。</summary>
+        void OnClockTick(object sender, EventArgs e)
+        {
+            if (snap == null) return;
+            string now = DateTime.Now.ToString("HH:mm:ss");
+            foreach (var r in rows)
+            {
+                if (r.key != "clock") continue;
+                if (r.value != now) r.value = now;
+                Invalidate();
+                return;
+            }
         }
 
         Device NewDevice()

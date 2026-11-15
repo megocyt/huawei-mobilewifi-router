@@ -42,6 +42,8 @@ namespace HwWidget
         HostsPopup hostsPopup;
         int[] rowTops;
         int hostsRowIdx = -1;
+        bool msisdnRevealed;
+        Rectangle eyeRect = Rectangle.Empty;
 
         enum Kind { Text, Signal, Plan, Battery }
         class Row
@@ -54,6 +56,7 @@ namespace HwWidget
             public bool mono;
             public string tail;
             public bool charging;
+            public bool eye;
         }
 
         public WidgetForm()
@@ -290,7 +293,7 @@ namespace HwWidget
                 });
             }
             if (On("msisdn") && !string.IsNullOrEmpty(s.msisdn) && s.msisdn != "-")
-                outRows.Add(new Row { key = "msisdn", label = L.T("lbl.num"), value = s.msisdn, color = Col("fg"), mono = true });
+                outRows.Add(new Row { key = "msisdn", label = L.T("lbl.num"), value = msisdnRevealed ? s.msisdn : MaskPhone(s.msisdn), color = Col("fg"), mono = true, eye = true });
             if (On("ip"))
             {
                 outRows.Add(new Row { key = "ip", label = L.T("lbl.local"), value = LocalIp(cfg.host), color = Col("fg"), mono = true });
@@ -420,6 +423,7 @@ namespace HwWidget
             }
             else y = Pad;
 
+            eyeRect = Rectangle.Empty;
             foreach (Row r in rows)
                 DrawRow(g, r, ref y, rc);
         }
@@ -436,7 +440,7 @@ namespace HwWidget
                 new Rectangle(lx, y, labelW, rowH), muted,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPrefix);
 
-            int tailW = r.kind == Kind.Plan ? 46 : 0;
+            int tailW = r.kind == Kind.Plan ? 46 : (r.eye ? 22 : 0);
             int vx = lx + labelW + 8;
             var vRect = new Rectangle(vx, y, right - tailW - vx, rowH);
 
@@ -445,6 +449,12 @@ namespace HwWidget
                 TextFormatFlags.VerticalCenter | TextFormatFlags.Right | TextFormatFlags.NoPrefix
                 | TextFormatFlags.EndEllipsis);
             if (vfOwned != null) { vfOwned.Dispose(); vfOwned = null; }
+
+            if (r.eye)
+            {
+                eyeRect = new Rectangle(right - 18, y + (rowH - 14) / 2, 18, 14);
+                DrawEye(g, eyeRect, msisdnRevealed, r.color);
+            }
 
             if (r.kind == Kind.Plan)
             {
@@ -488,6 +498,39 @@ namespace HwWidget
                 if (sz == minSize) break;
             }
             return cur;
+        }
+
+        static string MaskPhone(string phone)
+        {
+            if (string.IsNullOrEmpty(phone) || phone.Length <= 4) return phone;
+            if (phone.Length <= 7) return phone.Substring(0, 2) + new string('*', phone.Length - 2);
+            return phone.Substring(0, 3) + "****" + phone.Substring(phone.Length - 4);
+        }
+
+        static void DrawEye(Graphics g, Rectangle box, bool open, Color c)
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            float cx = box.X + box.Width / 2f, cy = box.Y + box.Height / 2f;
+            // 眼球轮廓（拉伸椭圆）
+            float ew = 8f, eh = 5f;
+            using (var pen = new Pen(c, 1.3f))
+            {
+                g.DrawEllipse(pen, cx - ew, cy - eh, ew * 2, eh * 2);
+                // 瞳孔
+                if (open)
+                    g.DrawEllipse(pen, cx - 2.5f, cy - 2.5f, 5, 5);
+                else
+                {
+                    // 关闭状态：横线代替瞳孔
+                    g.DrawLine(pen, cx - 2.5f, cy, cx + 2.5f, cy);
+                }
+            }
+            if (!open)
+            {
+                // 斜线划掉
+                using (var pen = new Pen(c, 1.2f))
+                    g.DrawLine(pen, cx - 6, cy + 5, cx + 6, cy - 5);
+            }
         }
 
         // ---------------------------------------------------------------- 终端行悬停提示
@@ -765,6 +808,18 @@ namespace HwWidget
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
+            if (e.Button == MouseButtons.Left && !eyeRect.IsEmpty && eyeRect.Contains(e.Location))
+            {
+                msisdnRevealed = !msisdnRevealed;
+                // rows[].value 只在 BuildRows 时写入，切换后需要立即重写这一行，
+                // 否则要等下一次 PollLoop 采样回来才会看到脱敏/明文变化。
+                string raw = snap != null ? snap.msisdn : null;
+                if (!string.IsNullOrEmpty(raw) && raw != "-")
+                    foreach (var r in rows)
+                        if (r.key == "msisdn") { r.value = msisdnRevealed ? raw : MaskPhone(raw); break; }
+                Invalidate();
+                return;
+            }
             if (e.Button == MouseButtons.Left && !cfg.locked)
             {
                 dragging = true;

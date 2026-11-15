@@ -418,6 +418,8 @@ namespace HwWidget
 
         void DrawRow(Graphics g, Row r, ref int y, Rectangle rc)
         {
+            Font vfOwned;
+
             Color muted = Blend(Color.Gray, Parse(cfg.fg), 0.38f);
             int right = rc.Right - Pad;
             DrawIcon(g, r, new Rectangle(Pad, y, IconW, rowH), muted);
@@ -430,10 +432,11 @@ namespace HwWidget
             int vx = lx + labelW + 8;
             var vRect = new Rectangle(vx, y, right - tailW - vx, rowH);
 
-            Font vf = r.mono ? fMono : fValue;
+            Font vf = FitValueFont(g, r.mono ? fMono : fValue, r.value, vRect.Width, out vfOwned);
             TextRenderer.DrawText(g, r.value, vf, vRect, r.color,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.Right | TextFormatFlags.NoPrefix
                 | TextFormatFlags.EndEllipsis);
+            if (vfOwned != null) { vfOwned.Dispose(); vfOwned = null; }
 
             if (r.kind == Kind.Plan)
             {
@@ -453,6 +456,30 @@ namespace HwWidget
                 y += 12;
             }
             y += rowH + RowGap;
+        }
+
+        /// <summary>内容文字放不下时先逐步缩小字号（最多降 3pt，且不低于 8pt），
+        /// 缩到下限仍放不下则保持该字号交给 EndEllipsis 截断。
+        /// 返回实际使用的字体；若新建了缩字号字体则通过 <paramref name="owned"/> 输出，调用方负责释放。</summary>
+        static Font FitValueFont(Graphics g, Font baseFont, string text, int maxW, out Font owned)
+        {
+            owned = null;
+            if (string.IsNullOrEmpty(text) || maxW <= 0) return baseFont;
+            float minSize = Math.Max(8f, baseFont.Size - 3f);
+            Font cur = baseFont;
+            for (float sz = baseFont.Size; sz > minSize;)
+            {
+                Size need = TextRenderer.MeasureText(g, text, cur, new Size(int.MaxValue, cur.Height),
+                    TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+                if (need.Width <= maxW) return cur;
+                sz = Math.Max(minSize, sz - 0.5f);
+                var nf = new Font(cur.FontFamily, sz, cur.Style);
+                if (owned != null) owned.Dispose();
+                owned = nf;
+                cur = nf;
+                if (sz == minSize) break;
+            }
+            return cur;
         }
 
         /// <summary>行首图标列，按 key 几何绘制，颜色跟随行主题色。</summary>

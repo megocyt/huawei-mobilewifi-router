@@ -58,16 +58,12 @@ namespace HwWidget
     }
 
     /// <summary>华为随身 WiFi WebUI 客户端：SCRAM 登录 + XML 请求体 + 一次性 CSRF token。
-    /// 协议细节与 hw_status.py 完全一致（实测可用）。</summary>
+    /// 协议细节与 hw_status.py 完全一致（实测可用）。单独运行时直接访问设备管理页。</summary>
     public class Device : IDisposable
     {
         public string baseUrl = "http://192.168.8.1";
         public string user = "admin";
         public string password = "";
-        public string panelUrl = "http://127.0.0.1:8765/data";
-        public string source = "auto";           // auto | direct | panel
-        public bool PanelMode;                    // 成功后置位，界面据此显示来源
-        bool? panelOk;                            // auto 源的面板探测缓存（与 python 版一致）
 
         CookieJar cookies = new CookieJar();
         string token;
@@ -631,28 +627,10 @@ namespace HwWidget
             return key;
         }
 
-        /// <summary>配置变更后调用：重探数据源、丢弃旧会话。</summary>
-        public void ResetProbe()
-        {
-            panelOk = null;
-            PanelMode = false;
-        }
-
         public Snap Sample()
         {
             var s = new Snap();
             s.ts = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
-            if (source != "direct")
-            {
-                bool tryPanel = source == "panel" || (panelOk ?? PanelAlive());
-                if (tryPanel)
-                {
-                    if (FillFromPanel(s)) return s;
-                    panelOk = null;                       // 拉取失败，下轮重新探测
-                    if (source == "panel") { s.err = L.T("err.panel"); s.ok = false; return s; }
-                }
-                else if (source == "auto") panelOk = panelOk ?? false;
-            }
             if (!Login(false))
             {
                 s.loggedIn = false;
@@ -690,113 +668,12 @@ namespace HwWidget
             return s;
         }
 
-        bool PanelAlive()
-        {
-            try
-            {
-                var req = (HttpWebRequest)WebRequest.Create(panelUrl);
-                req.Method = "HEAD";
-                req.Timeout = 600;
-                using (var r = (HttpWebResponse)req.GetResponse())
-                {
-                    panelOk = (int)r.StatusCode < 500;
-                    return panelOk.Value;
-                }
-            }
-            catch { panelOk = false; return false; }
-        }
-
-        bool FillFromPanel(Snap s)
-        {
-            try
-            {
-                var req = (HttpWebRequest)WebRequest.Create(panelUrl);
-                req.Timeout = 6000;
-                string json;
-                using (var resp = (HttpWebResponse)req.GetResponse())
-                using (var sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
-                    json = sr.ReadToEnd();
-                var ser = new JavaScriptSerializer();
-                ser.MaxJsonLength = 8 * 1024 * 1024;
-                var root = ser.Deserialize<Dictionary<string, object>>(json);
-                object tmp;
-                if (root == null || !root.TryGetValue("snapshot", out tmp)) return false;
-                var snap = tmp as Dictionary<string, object>;
-                if (snap == null) return false;
-                PanelMode = true;
-                FillFromPanelSnap(s, snap);
-                return s.ok;
-            }
-            catch { PanelMode = false; panelOk = null; return false; }
-        }
-
         static Dictionary<string, object> Sub(Dictionary<string, object> d, string key)
         {
             object v;
             if (d == null || !d.TryGetValue(key, out v)) return new Dictionary<string, object>();
             var m = v as Dictionary<string, object>;
             return m ?? new Dictionary<string, object>();
-        }
-
-        void FillFromPanelSnap(Snap s, Dictionary<string, object> snap)
-        {
-            var c = Sub(snap, "computed");
-            var status = Sub(snap, "status");
-            var traffic = Sub(snap, "traffic");
-            var signal = Sub(snap, "signal");
-            s.loggedIn = Str(snap, "logged_in") == "True" || Str(snap, "logged_in") == "true";
-            FillCore(s, status, traffic, signal);
-            s.net = Str(c, "net");
-            s.conn = Str(c, "conn");
-            s.rsrpLevel = Str(c, "rsrp_level");
-            s.monthDown = (long)D(c, "month_" + "download");
-            var pl = Sub(c, "plan");
-            if (pl.Count > 0)
-            {
-                s.planLimit = (long)D(pl, "limit");
-                s.planUsed = (long)D(pl, "used");
-                s.planRemain = (long)D(pl, "remain");
-                s.planPercent = D(pl, "percent");
-                s.planDayPercent = D(pl, "day_percent");
-                s.planLimitRaw = Str(pl, "limit_raw");
-                s.planThreshold = Str(pl, "threshold");
-                s.planStartDay = Str(pl, "start_day");
-                s.planDaysLeft = (int)D(pl, "days_left");
-                s.planOverThreshold = Str(pl, "over_threshold") == "True" || Str(pl, "over_threshold") == "true";
-                s.planOverLimit = Str(pl, "over_limit") == "True" || Str(pl, "over_limit") == "true";
-                s.dayUsed = (long)D(pl, "day_used");
-            }
-            s.smsUnread = (int)D(c, "sms_unread");
-            s.smsInbox = (int)D(c, "sms_inbox");
-            s.hostsActive = (int)D(c, "hosts_active");
-            s.hostsTotal = (int)D(c, "hosts_total");
-            s.charging = Str(status, "BatteryStatus") == "1";
-            foreach (var o in Arr(c, "hosts"))
-            {
-                var h = o as Dictionary<string, object>;
-                if (h == null) continue;
-                var host = new Host();
-                host.name = Str(h, "name");
-                host.mac = Str(h, "mac");
-                host.ip = Str(h, "ip");
-                host.band = Str(h, "band");
-                host.brand = Str(h, "brand");
-                host.active = Str(h, "active") == "True" || Str(h, "active") == "true";
-                host.rxKb = (long)D(h, "rx");
-                host.txKb = (long)D(h, "tx");
-                host.rateDown = (long)D(h, "rate_down");
-                host.rateUp = (long)D(h, "rate_up");
-                host.mode = Str(h, "rate_mode");
-                s.hosts.Add(host);
-            }
-            var dev = Sub(snap, "device");
-            s.wanIp = Str(dev, "WanIPAddress");
-            s.msisdn = Str(dev, "Msisdn");
-            s.uptime = (long)D(dev, "uptime");
-            s.model = Str(dev, "DeviceName");
-            var plmn = Sub(snap, "plmn");
-            s.carrier = Str(plmn, "ShortName");
-            if (s.err.Length == 0) s.ok = true;
         }
 
         void FillCore(Snap s, Dictionary<string, object> status, Dictionary<string, object> traffic,
@@ -829,18 +706,6 @@ namespace HwWidget
             foreach (char ch in raw)
                 if (char.IsDigit(ch) || ch == '-' || ch == '.') sb.Append(ch);
             return sb.Length == 0 ? "-" : sb.ToString();
-        }
-
-        static double D(Dictionary<string, object> d, string key)
-        {
-            object v;
-            if (d == null || !d.TryGetValue(key, out v)) return 0;
-            if (v is double) return (double)v;
-            if (v is int) return (int)v;
-            if (v is long) return (long)v;
-            double x;
-            return double.TryParse(Convert.ToString(v, CultureInfo.InvariantCulture), NumberStyles.Any,
-                                   CultureInfo.InvariantCulture, out x) ? x : 0;
         }
 
         static string Level(double? rsrp)

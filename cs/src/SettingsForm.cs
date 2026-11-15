@@ -13,7 +13,6 @@ namespace HwWidget
         readonly Cfg cfg;                          // 对话框内编辑副本
         public Cfg Result { get { return cfg; } }
 
-        FlatCombo srcBox;
         SpinBox ivlBox, sizeBox;
         TrackBar alphaBar;
         Label alphaLbl;
@@ -24,7 +23,7 @@ namespace HwWidget
 
         FlatCombo langBox;
         FlatCombo fontBox;
-        TextBox hostBox, userBox, pwdBox, panelBox;
+        TextBox hostBox, userBox, pwdBox;
 
         const int LX = 18, CX = 96;               // 标签列 / 控件列起点
 
@@ -107,13 +106,6 @@ namespace HwWidget
         void BuildConnPage(TabPage p)
         {
             int y = 18;
-            Lbl(p, y, L.T("lbl.source"));
-            srcBox = new FlatCombo(new string[] { "auto", "panel", "direct" }) { Left = CX, Top = y, Width = 120, Height = 24 };
-            srcBox.SelectedItem = cfg.source == "panel" || cfg.source == "direct" ? cfg.source : "auto";
-            p.Controls.Add(srcBox);
-            Hint(p, 232, y, L.T("hint.source"));
-            y += 38;
-
             Lbl(p, y, L.T("lbl.host"));
             hostBox = Tbx(p, y, 200, cfg.host);
             Hint(p, 306, y, L.T("hint.host"));
@@ -124,9 +116,6 @@ namespace HwWidget
             Lbl(p, y, L.T("lbl.pwd"));
             pwdBox = Tbx(p, y, 200, cfg.password);
             pwdBox.UseSystemPasswordChar = true;
-            y += 38;
-            Lbl(p, y, L.T("lbl.panel"));
-            panelBox = Tbx(p, y, 340, cfg.panelUrl);
             y += 38;
             Lbl(p, y, L.T("lbl.interval"));
             ivlBox = new SpinBox { Left = CX, Top = y, Width = 70, Height = 24, Minimum = 2, Maximum = 120, Increment = 1, Value = (decimal)Math.Max(2, Math.Min(120, cfg.interval)) };
@@ -249,12 +238,10 @@ namespace HwWidget
 
         void SaveAndClose()
         {
-            cfg.source = string.IsNullOrEmpty(srcBox.SelectedItem) ? "auto" : srcBox.SelectedItem;
             cfg.language = langBox.SelectedIndex == 1 ? "en" : langBox.SelectedIndex == 2 ? "zh-TW" : "zh-CN";
             cfg.host = string.IsNullOrEmpty(hostBox.Text.Trim()) ? "192.168.8.1" : hostBox.Text.Trim();
             cfg.user = string.IsNullOrEmpty(userBox.Text.Trim()) ? "admin" : userBox.Text.Trim();
             cfg.password = pwdBox.Text;
-            cfg.panelUrl = string.IsNullOrEmpty(panelBox.Text.Trim()) ? "http://127.0.0.1:8765/data" : panelBox.Text.Trim();
             cfg.interval = Math.Max(2.0, (double)ivlBox.Value);
             cfg.alpha = alphaBar.Value / 100.0;
             cfg.fontSize = (int)sizeBox.Value;
@@ -629,7 +616,6 @@ namespace HwWidget
         {
             var n = new Cfg();
             n.host = c.host; n.user = c.user; n.password = c.password;
-            n.source = c.source; n.panelUrl = c.panelUrl;
             n.interval = c.interval; n.alpha = c.alpha;
             n.fontFam = c.fontFam; n.fontSize = c.fontSize;
             n.fg = c.fg; n.bg = c.bg; n.accent = c.accent; n.warn = c.warn; n.bad = c.bad;

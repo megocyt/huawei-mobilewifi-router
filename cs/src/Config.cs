@@ -7,8 +7,10 @@ using System.Web.Script.Serialization;
 
 namespace HwWidget
 {
-    /// <summary>悬浮窗配置。字段与 python 版 hw_widget.pyw 共用同一个
-    /// %APPDATA%\HWiFiWidget\config.json（键名完全一致，两边可互相接管）。</summary>
+    /// <summary>悬浮窗配置（CS 自含版）。存储于 %APPDATA%\HWiFiWidget\config.json，
+    /// 仅保留与设备直连所需的字段；不再写入面板数据源相关旧键。
+    /// Python 面板相关字段（source / panel_url）在读取时忽略。
+    /// </summary>
     public class Cfg
     {
         public static readonly string[] RowKeys =
@@ -21,9 +23,7 @@ namespace HwWidget
         public string host = "192.168.8.1";
         public string user = "admin";
         public string password = "";
-        public string source = "auto";                       // auto | panel | direct
         public string language = "zh-CN";                    // zh-CN | en | zh-TW
-        public string panelUrl = "http://127.0.0.1:8765/data";
         public double interval = 5.0;
         public double alpha = 0.88;
         public string fontFam = "Microsoft YaHei UI";
@@ -88,9 +88,7 @@ namespace HwWidget
             c.host = Str(d, "host", c.host);
             c.user = Str(d, "user", c.user);
             c.password = Str(d, "password", "");
-            c.source = Str(d, "source", c.source);
             c.language = Str(d, "language", c.language);
-            c.panelUrl = Str(d, "panel_url", c.panelUrl);
             c.interval = Num(d, "interval", c.interval);
             c.alpha = Num(d, "alpha", c.alpha);
             c.fontFam = Str(d, "font_family", c.fontFam);
@@ -138,7 +136,7 @@ namespace HwWidget
             sb.Append("{\n");
             Put(sb, "host", host); Put(sb, "user", user);
             Put(sb, "password", savePassword ? password : "");
-            Put(sb, "source", source); Put(sb, "language", language); Put(sb, "panel_url", panelUrl);
+            Put(sb, "language", language);
             PutNum(sb, "interval", interval); PutNum(sb, "alpha", Math.Round(alpha, 2));
             Put(sb, "font_family", fontFam); PutNum(sb, "font_size", fontSize);
             Put(sb, "fg", fg); Put(sb, "bg", bg); Put(sb, "accent", accent);

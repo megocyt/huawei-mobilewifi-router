@@ -20,7 +20,6 @@ namespace HwWidget
         readonly object devLock = new object();
 
         Snap snap;
-        bool viaPanel;
         string err = "";
         Row[] rows = new Row[0];
         string hint = "";
@@ -113,9 +112,6 @@ namespace HwWidget
             d.baseUrl = h.IndexOf("://") >= 0 ? h : "http://" + h;
             d.user = string.IsNullOrEmpty(cfg.user) ? "admin" : cfg.user;
             d.password = cfg.password;
-            d.source = cfg.source;
-            d.panelUrl = cfg.panelUrl;
-            d.ResetProbe();
             return d;
         }
 
@@ -383,8 +379,8 @@ namespace HwWidget
                 string title = hint.Length > 0 ? hint : "HUAWEI WiFi · " + cfg.host;
                 TextRenderer.DrawText(g, title, fValue, new Point(Pad + 16, y),
                     Blend(Color.Gray, Parse(cfg.fg), 0.55f), TextFormatFlags.NoPrefix);
-                // 右侧网络制式徽章（走面板时标 PANEL）
-                string badge = snap == null ? "-" : (viaPanel ? snap.net + " · P" : snap.net);
+                // 右侧网络制式徽章
+                string badge = snap == null ? "-" : snap.net;
                 Size bs = TextRenderer.MeasureText(badge, fTitle);
                 var br = new Rectangle(rc.Right - Pad - bs.Width - 14, y, bs.Width + 14, bs.Height + 6);
                 using (var p = Round(br, 4))
@@ -615,20 +611,19 @@ namespace HwWidget
             while (!stopPoll)
             {
                 Snap s = null;
-                bool pm = false;
                 string e = "";
-                try { lock (devLock) { s = dev.Sample(); pm = dev.PanelMode; } }
+                try { lock (devLock) { s = dev.Sample(); } }
                 catch (Exception ex) { e = ex.Message; try { Cfg.LogError(ex); } catch { } }
                 if (s != null && !s.ok) e = s.err;
                 else if (s != null) e = "";
-                Snap cs = s; string ce = e; bool cp = pm;
+                Snap cs = s; string ce = e;
                 try
                 {
                     if (IsHandleCreated && !stopPoll)
                         BeginInvoke(new Action(delegate
                         {
                             if (stopPoll) return;
-                            snap = cs; err = ce; viaPanel = cp;
+                            snap = cs; err = ce;
                             Relayout();
                             UpdateTrayTip();
                             if (!string.IsNullOrEmpty(ce) && ce != lastErr && tray != null)
@@ -690,7 +685,7 @@ namespace HwWidget
         protected override void OnMouseDoubleClick(MouseEventArgs e)
         {
             base.OnMouseDoubleClick(e);
-            if (e.Button == MouseButtons.Left) Do("panel");
+            if (e.Button == MouseButtons.Left) Do("manage");
         }
 
         protected override void OnMouseWheel(MouseEventArgs e)
@@ -740,15 +735,20 @@ namespace HwWidget
                     break;
                 case "settings": ShowSettings(); break;
                 case "refresh":
-                    lock (devLock) { dev.ForgetSession(); dev.ResetProbe(); }
+                    lock (devLock) { dev.ForgetSession(); }
                     wake.Set();
                     break;
-                case "panel":
+                case "manage":
                     try
                     {
-                        string url = cfg.panelUrl;
-                        int i = url.LastIndexOf('/');
-                        Process.Start(i > 8 ? url.Substring(0, i + 1) : url);
+                        string url;
+                        lock (devLock) url = dev != null ? dev.baseUrl : null;
+                        if (string.IsNullOrEmpty(url))
+                        {
+                            string h = (cfg.host ?? "").Trim();
+                            url = h.IndexOf("://") >= 0 ? h : "http://" + h;
+                        }
+                        Process.Start(url);
                     }
                     catch { }
                     break;
@@ -813,7 +813,7 @@ namespace HwWidget
             Add(m, L.T("menu.toggle"), "toggle");
             Add(m, L.T("menu.settings"), "settings");
             Add(m, L.T("menu.refresh"), "refresh");
-            Add(m, L.T("menu.panel"), "panel");
+            Add(m, L.T("menu.manage"), "manage");
             m.Items.Add(new ToolStripSeparator());
             var t = Add(m, (cfg.topmost ? L.T("menu.topoff") : L.T("menu.topon")), "top"); t.Tag = "top";
             var l = Add(m, (cfg.locked ? L.T("menu.unlock") : L.T("menu.lock")), "lock"); l.Tag = "lock";

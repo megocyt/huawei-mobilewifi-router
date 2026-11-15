@@ -40,6 +40,7 @@ namespace HwWidget
         {
             // ---- 悬浮窗行标签
             { "lbl.network",  new[]{"网络", "Network", "網路"} },
+            { "lbl.model",    new[]{"型号", "Model", "型號"} },
             { "lbl.signal",   new[]{"信号", "Signal", "信號"} },
             { "lbl.rate",     new[]{"速率", "Speed", "速率"} },
             { "lbl.plan",     new[]{"套餐", "Plan", "套餐"} },
@@ -48,6 +49,7 @@ namespace HwWidget
             { "lbl.battery",  new[]{"电量", "Battery", "電量"} },
             { "lbl.local",    new[]{"本机", "Local", "本機"} },
             { "lbl.wan",      new[]{"WAN", "WAN", "WAN"} },
+            { "lbl.v6",       new[]{"IPv6", "IPv6", "IPv6"} },
             { "lbl.uptime",   new[]{"运行", "Uptime", "運行"} },
             { "lbl.sms",      new[]{"短信", "SMS", "簡訊"} },
             { "lbl.clock",    new[]{"时间", "Clock", "時間"} },
@@ -147,6 +149,7 @@ namespace HwWidget
 
             // ---- 显示内容项（设置页）
             { "row.conn",     new[]{"连接状态 / 运营商", "Connection / Carrier", "連線狀態 / 業者"} },
+            { "row.model",    new[]{"设备型号", "Device model", "裝置型號"} },
             { "row.signal",   new[]{"信号格 + RSRP/SINR", "Signal bars + RSRP/SINR", "信號格 + RSRP/SINR"} },
             { "row.rate",     new[]{"实时上下行速率", "Live up/down speed", "即時上下行速率"} },
             { "row.plan",     new[]{"套餐用量与剩余天数", "Plan usage & days left", "套餐用量與剩餘天數"} },

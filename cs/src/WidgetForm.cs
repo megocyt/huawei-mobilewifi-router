@@ -31,6 +31,7 @@ namespace HwWidget
         System.Windows.Forms.Timer clockTimer, hintTimer, saveTimer, trayClickTimer;
         SettingsForm settingsForm;
         long lastTrayDoubleClickTicks;
+        Image logoImg;                             // 标题栏左侧 logo，从内嵌 ico 取 64px 帧后缩放
         Thread poll;
         volatile bool stopPoll;
         readonly AutoResetEvent wake = new AutoResetEvent(false);
@@ -75,6 +76,7 @@ namespace HwWidget
             DoubleBuffered = true;
             KeyPreview = false;
             BuildFonts();
+            try { using (var tmp = TrayIcon.MakeFor(64)) logoImg = tmp.ToBitmap(); } catch { logoImg = null; }
             Application.AddMessageFilter(new WheelFilter(this));
 
             menu = BuildMenu();
@@ -153,9 +155,9 @@ namespace HwWidget
             fValue = new Font(cfg.fontFam, size, FontStyle.Regular);
             fMono = new Font("Consolas", size, FontStyle.Regular);
             rowH = Math.Max(Math.Max(fValue.Height, fLabel.Height), fMono.Height);
-            string[] probes = { L.T("lbl.network"), L.T("lbl.signal"), L.T("lbl.rate"), L.T("lbl.plan"),
+            string[] probes = { L.T("lbl.network"), L.T("lbl.model"), L.T("lbl.signal"), L.T("lbl.rate"), L.T("lbl.plan"),
                                 L.T("lbl.traffic"), L.T("lbl.hosts"), L.T("lbl.battery"), L.T("lbl.local"),
-                                L.T("lbl.wan"), L.T("lbl.uptime"), L.T("lbl.sms"), L.T("lbl.clock"),
+                                L.T("lbl.wan"), L.T("lbl.v6"), L.T("lbl.uptime"), L.T("lbl.sms"), L.T("lbl.clock"),
                                 L.T("lbl.status"), L.T("lbl.detail"), L.T("lbl.num") };
             int lw = 0;
             foreach (string t in probes)
@@ -248,6 +250,8 @@ namespace HwWidget
                     value = ((s.net ?? "-") + " " + L.Carrier(s.carrier)).Trim(),
                     color = Col(s.connected ? "accent" : "bad")
                 });
+            if (On("model") && !string.IsNullOrEmpty(s.model) && s.model != "-")
+                outRows.Add(new Row { key = "model", label = L.T("lbl.model"), value = s.model, color = Col("fg") });
             if (On("signal"))
             {
                 string v = s.rsrp + " dBm · SINR " + s.sinr;
@@ -306,6 +310,8 @@ namespace HwWidget
             {
                 outRows.Add(new Row { key = "ip", label = L.T("lbl.local"), value = LocalIp(cfg.host), color = Col("fg"), mono = true });
                 outRows.Add(new Row { key = "ip2", label = L.T("lbl.wan"), value = s.wanIp, color = Col("fg"), mono = true });
+                if (!string.IsNullOrEmpty(s.wanIpv6) && s.wanIpv6 != "-")
+                    outRows.Add(new Row { key = "ip6", label = L.T("lbl.v6"), value = s.wanIpv6, color = Col("fg"), mono = true });
             }
             if (On("uptime") && s.uptime > 0)
                 outRows.Add(new Row { key = "uptime", label = L.T("lbl.uptime"), value = Device.HumanDur(s.uptime), color = Col("fg") });
@@ -406,12 +412,23 @@ namespace HwWidget
                 y = Pad - 2;
                 bool alive = snap != null && string.IsNullOrEmpty(err);
                 Color dot = alive ? accent : Col("bad");
+                // 左侧 logo：64px 帧缩到 20x20，高 DPI 不糊；右下角叠上状态小圆点
+                int logoSize = 20;
+                int textX = Pad;
+                if (logoImg != null)
+                {
+                    var old = g.InterpolationMode;
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.DrawImage(logoImg, Pad - 2, y, logoSize, logoSize);
+                    g.InterpolationMode = old;
+                    textX = Pad + logoSize + 2;
+                }
                 using (var halo = new SolidBrush(Blend(bg, dot, 0.35f)))
-                    g.FillEllipse(halo, Pad - 1, y + 4, 11, 11);
+                    g.FillEllipse(halo, textX - 8, y + logoSize - 8, 9, 9);
                 using (var b = new SolidBrush(dot))
-                    g.FillEllipse(b, Pad + 1.5f, y + 5.5f, 6, 6);
+                    g.FillEllipse(b, textX - 6, y + logoSize - 6, 5, 5);
                 string title = hint.Length > 0 ? hint : "HUAWEI WiFi · " + cfg.host;
-                TextRenderer.DrawText(g, title, fValue, new Point(Pad + 16, y),
+                TextRenderer.DrawText(g, title, fValue, new Point(textX + 2, y),
                     Blend(Color.Gray, Parse(cfg.fg), 0.55f), TextFormatFlags.NoPrefix);
                 // 右侧网络制式徽章
                 string badge = snap == null ? "-" : snap.net;
@@ -626,6 +643,17 @@ namespace HwWidget
                         g.FillEllipse(bFill, cx - 1.5f, cy + 3, 3, 3);
                         break;
                     }
+                    case "model":
+                    {
+                        // 随身 WiFi 机身：圆角矩形 + 顶部两根短天线 + 底部小指示灯
+                        var body = new Rectangle((int)(cx - 8), (int)(cy - 3), 16, 9);
+                        using (var path = Round(body, 2))
+                            g.DrawPath(pen, path);
+                        g.DrawLine(pen, cx - 5, cy - 3, cx - 5, cy - 7);
+                        g.DrawLine(pen, cx + 5, cy - 3, cx + 5, cy - 7);
+                        g.FillEllipse(bFill, cx - 1.2f, cy + 0.4f, 2.4f, 2.4f);
+                        break;
+                    }
                     case "signal":
                     {
                         // 信号柱，底部对齐，按强度填色
@@ -725,6 +753,20 @@ namespace HwWidget
                             g.DrawEllipse(pen, cx - 3f, cy - 7, 6, 14);
                             g.DrawLine(pen, cx - 7, cy, cx + 7, cy);
                         }
+                        break;
+                    }
+                    case "ip6":
+                    {
+                        // 六边形（v6 提示）+ 中心小点
+                        float rr = 7f;
+                        var pts = new PointF[6];
+                        for (int i = 0; i < 6; i++)
+                        {
+                            double a = Math.PI / 3.0 * i - Math.PI / 2.0;
+                            pts[i] = new PointF(cx + rr * (float)Math.Cos(a), cy + rr * (float)Math.Sin(a));
+                        }
+                        g.DrawPolygon(pen, pts);
+                        g.FillEllipse(bFill, cx - 1.2f, cy - 1.2f, 2.4f, 2.4f);
                         break;
                     }
                     case "uptime":
@@ -1030,6 +1072,7 @@ namespace HwWidget
             SavePos();
             if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }
             if (hostsPopup != null) { hostsPopup.Close(); hostsPopup = null; }
+            if (logoImg != null) { logoImg.Dispose(); logoImg = null; }
             Close();
         }
 

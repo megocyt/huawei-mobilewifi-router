@@ -15,10 +15,10 @@ namespace HwWidget
     {
         public static readonly string[] RowKeys =
         {
-            "conn", "signal", "rate", "plan", "traffic", "hosts",
+            "conn", "model", "signal", "rate", "plan", "traffic", "hosts",
             "battery", "msisdn", "ip", "uptime", "sms", "clock",
         };
-        static readonly string[] DefaultOn = { "conn", "signal", "rate", "plan", "hosts", "battery", "msisdn" };
+        static readonly string[] DefaultOn = { "conn", "model", "signal", "rate", "plan", "hosts", "battery", "msisdn" };
 
         public string host = "192.168.8.1";
         public string user = "admin";

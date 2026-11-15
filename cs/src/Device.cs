@@ -37,6 +37,7 @@ namespace HwWidget
         public string battery = "-";
         public bool charging;
         public string wanIp = "-";
+        public string wanIpv6 = "-";
         public string msisdn = "-";
         public long uptime;
         public string model = "-";
@@ -668,6 +669,7 @@ namespace HwWidget
             s.smsInbox = (int)Lng(sms, "LocalInbox");
             var dev = Get("/api/device/information");
             s.wanIp = Str(dev, "WanIPAddress");
+            s.wanIpv6 = Str(dev, "WanIPv6Address");
             s.msisdn = Str(dev, "Msisdn");
             s.uptime = Lng(dev, "uptime");
             s.model = Str(dev, "DeviceName");

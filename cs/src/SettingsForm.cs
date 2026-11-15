@@ -25,7 +25,15 @@ namespace HwWidget
         FlatCombo fontBox;
         TextBox hostBox, userBox, pwdBox;
 
-        const int LX = 18, CX = 96;               // 标签列 / 控件列起点
+        // 标签列起始 X 固定；控件列起点 CX、窗宽、颜色/行为列间距会根据当前语言
+        // 测量标签宽度动态计算，避免英文/繁体长标签压到控件上。
+        const int LX = 18;
+        int CX = 96;
+        int formW = 520;
+        int colorColSpace = 84;
+        int colorBoxOffset = 40;
+        int behaviorCol2 = 240;
+        int rowColSpace = 230;
 
         public SettingsForm(Cfg current)
         {
@@ -41,9 +49,13 @@ namespace HwWidget
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Microsoft YaHei UI", 9f);
             TopMost = true;
-            ClientSize = new Size(520, 552);
 
-            var tabs = new FlatTabControl { Left = 10, Top = 8, Width = 500, Height = 492 };
+            // 依当前语言测量所有左列标签，动态规划列宽与窗宽
+            ComputeLayout();
+            ClientSize = new Size(formW, 552);
+
+            int tabsW = Math.Max(500, formW - 20);
+            var tabs = new FlatTabControl { Left = 10, Top = 8, Width = tabsW, Height = 492 };
             var tConn = new TabPage(L.T("tab.conn")) { BackColor = Color.White };
             var tLook = new TabPage(L.T("tab.look")) { BackColor = Color.White };
             var tRows = new TabPage(L.T("tab.rows")) { BackColor = Color.White };
@@ -56,15 +68,59 @@ namespace HwWidget
             BuildLookPage(tLook);
             BuildRowsPage(tRows);
 
-            var cancel = new Button { Text = L.T("btn.cancel"), Left = 300, Top = 510, Width = 100, Height = 30 };
+            int btnRight = tabs.Left + tabs.Width;
+            var cancel = new Button { Text = L.T("btn.cancel"), Left = btnRight - 220, Top = 510, Width = 100, Height = 30 };
             cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
             Controls.Add(cancel);
-            var ok = new Button { Text = L.T("btn.save"), Left = 410, Top = 510, Width = 100, Height = 30 };
+            var ok = new Button { Text = L.T("btn.save"), Left = btnRight - 110, Top = 510, Width = 100, Height = 30 };
             ok.Click += delegate { SaveAndClose(); };
             Controls.Add(ok);
             AcceptButton = ok;
 
             ResumeLayout(false);
+        }
+
+        // 按语言测量：标签列宽 CX、颜色列间距、行为第二列 X、显示内容列间距、窗宽
+        void ComputeLayout()
+        {
+            string[] leftLabels = { "lbl.host", "lbl.user", "lbl.pwd", "lbl.interval",
+                                    "lbl.opacity", "lbl.fontsize", "lbl.font", "lbl.language" };
+            int maxLeft = 0;
+            foreach (var k in leftLabels)
+            {
+                int w = TextRenderer.MeasureText(L.T(k), Font).Width;
+                if (w > maxLeft) maxLeft = w;
+            }
+            CX = Math.Max(96, LX + maxLeft + 14);
+
+            int maxColor = 0;
+            foreach (var key in ColorKeys)
+            {
+                int w = TextRenderer.MeasureText(L.T("color." + key), Font).Width;
+                if (w > maxColor) maxColor = w;
+            }
+            colorBoxOffset = Math.Max(40, maxColor + 8);            // 标签后留 8px 间隙再放色块
+            colorColSpace = colorBoxOffset + 26 + 12;               // 色块右边到下一列标签起始留 12px
+
+            int wTop = TextRenderer.MeasureText(L.T("chk.top"), Font).Width + 22;
+            int wLock = TextRenderer.MeasureText(L.T("chk.lock"), Font).Width + 22;
+            behaviorCol2 = Math.Max(240, LX + 4 + Math.Max(wTop, wLock) + 20);
+
+            int maxRow = 0;
+            foreach (var k in Cfg.RowKeys)
+            {
+                int w = TextRenderer.MeasureText(L.T("row." + k), Font).Width + 22;
+                if (w > maxRow) maxRow = w;
+            }
+            rowColSpace = Math.Max(230, maxRow + 20);
+
+            // 窗宽取多项最大值：默认 520、颜色行总宽、行为行右端 + 边距、显示内容行右端 + 边距
+            int needColor = LX + colorColSpace * (ColorKeys.Length - 1) + colorBoxOffset + 26 + 40;
+            int needBeh = behaviorCol2 + TextRenderer.MeasureText(L.T("chk.border"), Font).Width + 60;
+            int needRow = LX + rowColSpace + maxRow + 60;
+            int needHost = CX + 200 + 20 + TextRenderer.MeasureText(L.T("hint.host"), Font).Width + 40;
+            formW = Math.Max(520, Math.Max(Math.Max(needColor, needBeh), Math.Max(needRow, needHost)));
+            if (formW > 900) formW = 900;
         }
 
         // ---------------------------------------------------------------- 公共小件
@@ -78,7 +134,7 @@ namespace HwWidget
             p.Controls.Add(new Label { Text = text, Left = x, Top = y + 4, AutoSize = true, ForeColor = Color.FromArgb(120, 126, 133) });
         }
 
-        static TextBox Tbx(Control p, int y, int w, string text)
+        TextBox Tbx(Control p, int y, int w, string text)
         {
             var box = new LineBox { Left = CX, Top = y, Width = w, Height = 24 };
             var t = new TextBox { Text = text, BorderStyle = BorderStyle.None, BackColor = Color.White };
@@ -110,7 +166,7 @@ namespace HwWidget
             int y = 18;
             Lbl(p, y, L.T("lbl.host"));
             hostBox = Tbx(p, y, 200, cfg.host);
-            Hint(p, 306, y, L.T("hint.host"));
+            Hint(p, CX + 210, y, L.T("hint.host"));
             y += 38;
             Lbl(p, y, L.T("lbl.user"));
             userBox = Tbx(p, y, 200, cfg.user);
@@ -165,8 +221,9 @@ namespace HwWidget
             for (int i = 0; i < ColorKeys.Length; i++)
             {
                 int col = i;
-                p.Controls.Add(new Label { Text = L.T("color." + ColorKeys[col]), Left = LX + col * 84, Top = y + 4, AutoSize = true });
-                var b = new ColorBox { Left = LX + col * 84 + 40, Top = y, Width = 26, Height = 24, Value = Hex(ColorOf(cfg, ColorKeys[col])) };
+                int colX = LX + col * colorColSpace;
+                p.Controls.Add(new Label { Text = L.T("color." + ColorKeys[col]), Left = colX, Top = y + 4, AutoSize = true });
+                var b = new ColorBox { Left = colX + colorBoxOffset, Top = y, Width = 26, Height = 24, Value = Hex(ColorOf(cfg, ColorKeys[col])) };
                 string key = ColorKeys[col];
                 b.Click += delegate { PickColor(key, b); };
                 p.Controls.Add(b);
@@ -177,10 +234,10 @@ namespace HwWidget
             p.Controls.Add(new Label { Text = L.T("grp.behavior"), Left = LX, Top = y, AutoSize = true, Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold) });
             y += 26;
             topBox = Chk(p, LX + 4, y, L.T("chk.top"), cfg.topmost);
-            borderBox = Chk(p, 240, y, L.T("chk.border"), cfg.borderless);
+            borderBox = Chk(p, behaviorCol2, y, L.T("chk.border"), cfg.borderless);
             y += 30;
             lockBox = Chk(p, LX + 4, y, L.T("chk.lock"), cfg.locked);
-            titleBox = Chk(p, 240, y, L.T("chk.title"), cfg.showTitle);
+            titleBox = Chk(p, behaviorCol2, y, L.T("chk.title"), cfg.showTitle);
         }
 
         // ---------------------------------------------------------------- 显示内容页
@@ -189,7 +246,7 @@ namespace HwWidget
             for (int i = 0; i < Cfg.RowKeys.Length; i++)
             {
                 string k = Cfg.RowKeys[i];
-                var c = Chk(p, LX + (i % 2) * 230, 18 + (i / 2) * 32, L.T("row." + k), cfg.rows[k]);
+                var c = Chk(p, LX + (i % 2) * rowColSpace, 18 + (i / 2) * 32, L.T("row." + k), cfg.rows[k]);
                 rowBoxes[k] = c;
             }
         }

@@ -121,7 +121,7 @@ namespace HwWidget
             { "lbl.host",     new[]{"管理地址", "Manage address", "管理位址"} },
             { "lbl.user",     new[]{"登录用户", "Username", "登入使用者"} },
             { "lbl.pwd",      new[]{"登录密码", "Password", "登入密碼"} },
-            { "lbl.interval", new[]{"刷新秒数", "Refresh interval (s)", "重新整理秒數"} },
+            { "lbl.interval", new[]{"刷新秒数", "Interval (s)", "重新整理秒數"} },
             { "lbl.opacity",  new[]{"透明度", "Opacity", "透明度"} },
             { "lbl.fontsize", new[]{"字号", "Font size", "字級"} },
             { "lbl.font",     new[]{"字体", "Font", "字體"} },

@@ -526,14 +526,14 @@ namespace HwWidget
                 var h = o as Dictionary<string, object>;
                 if (h == null) continue;
                 var host = new Host();
-                host.name = Str(h, "HostName");
+                host.name = Str(h, "ActualName");
+                if (string.IsNullOrEmpty(host.name)) host.name = Str(h, "HostName");
                 host.mac = Str(h, "MACAddress");
-                host.ip = Str(h, "IpAddress");
-                host.band = Str(h, "HostProtocol");
-                host.brand = Str(h, "Vendor");
-                host.active = Str(h, "ActiveStatus") == "1";
-                long act;
-                if (!host.active && long.TryParse(Str(h, "ActiveTime"), out act) && act > 0) host.active = true;
+                host.ip = Str(h, "IPAddress");
+                host.band = Str(h, "Frequency");
+                host.brand = Str(h, "DevBrands");
+                if (string.IsNullOrEmpty(host.brand)) host.brand = Str(h, "VendorClassID");
+                host.active = IsActive(h, "Active") || IsActive(h, "WlanActive");
                 host.rxKb = Lng(h, "RxKBytes");
                 host.txKb = Lng(h, "TxKBytes");
                 alive.Add(host.mac + "|rx");
@@ -562,6 +562,17 @@ namespace HwWidget
             var dead = new List<string>();
             foreach (var k in win.Keys) if (!alive.Contains(k)) dead.Add(k);
             foreach (var k in dead) win.Remove(k);
+        }
+
+        /// <summary>设备 JSON 返回的 Active / WlanActive 可能是 bool 型 true/false 或数字 1/0，
+        /// JavaScriptSerializer 把 true 解析为 System.Boolean，Convert.ToString 得 "True"。</summary>
+        static bool IsActive(Dictionary<string, object> h, string key)
+        {
+            object v;
+            if (h == null || !h.TryGetValue(key, out v) || v == null) return false;
+            if (v is bool) return (bool)v;
+            string s = Convert.ToString(v, CultureInfo.InvariantCulture).ToLowerInvariant();
+            return s == "true" || s == "1";
         }
 
         public string errText = "";

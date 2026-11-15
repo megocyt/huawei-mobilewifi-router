@@ -39,6 +39,9 @@ namespace HwWidget
         Point dragOff;
         bool dragging;
         static string localIp = "";
+        HostsPopup hostsPopup;
+        int[] rowTops;
+        int hostsRowIdx = -1;
 
         enum Kind { Text, Signal, Plan, Battery }
         class Row
@@ -338,10 +341,14 @@ namespace HwWidget
         {
             rows = BuildRows().ToArray();
             int h = HeaderHeight();
-            foreach (Row r in rows)
+            rowTops = new int[rows.Length];
+            hostsRowIdx = -1;
+            for (int i = 0; i < rows.Length; i++)
             {
+                rowTops[i] = h;
+                if (rows[i].key == "hosts") hostsRowIdx = i;
                 h += rowH + RowGap;
-                if (r.kind == Kind.Plan) h += 12;
+                if (rows[i].kind == Kind.Plan) h += 12;
             }
             h += Pad - 3 - RowGap;
             if (ClientSize.Height != h || ClientSize.Width != W)
@@ -354,6 +361,7 @@ namespace HwWidget
                 }
             }
             Invalidate();
+            if (hostsPopup != null && hostsPopup.Visible) RefreshHostsTip();
         }
 
         // ---------------------------------------------------------------- 绘制
@@ -480,6 +488,65 @@ namespace HwWidget
                 if (sz == minSize) break;
             }
             return cur;
+        }
+
+        // ---------------------------------------------------------------- 终端行悬停提示
+        void CheckHostsHover(Point p)
+        {
+            if (hostsRowIdx < 0 || rowTops == null)
+            {
+                HideHostsTip(); return;
+            }
+            int top = rowTops[hostsRowIdx];
+            int bot = top + rowH;
+            if (p.Y < top || p.Y >= bot || snap == null || snap.hosts.Count == 0)
+            {
+                HideHostsTip(); return;
+            }
+            string text = BuildHostsTooltip();
+            if (string.IsNullOrEmpty(text)) { HideHostsTip(); return; }
+            if (hostsPopup == null) hostsPopup = new HostsPopup();
+            Point screen = PointToScreen(new Point(Pad + IconW + 6, bot + 6));
+            hostsPopup.ShowContent(text, screen, Parse(cfg.bg), Parse(cfg.fg),
+                                   Blend(Parse(cfg.bg), Color.White, 0.35f), fLabel);
+        }
+
+        void HideHostsTip()
+        {
+            if (hostsPopup != null) hostsPopup.HidePopup();
+        }
+
+        void RefreshHostsTip()
+        {
+            CheckHostsHover(PointToClient(Cursor.Position));
+        }
+
+        string BuildHostsTooltip()
+        {
+            var list = snap.hosts;
+            if (list.Count == 0) return "";
+            var sb = new StringBuilder();
+            sb.Append(snap.hostsActive).Append(" / ").Append(snap.hostsTotal);
+            sb.AppendLine();
+            int shown = 0;
+            foreach (var h in list)
+            {
+                if (!h.active && list.Count > 8) continue;
+                if (shown >= 15) { sb.AppendLine("..."); break; }
+                sb.Append(h.active ? "● " : "○ ").Append(string.IsNullOrEmpty(h.name) ? "-" : h.name);
+                if (!string.IsNullOrEmpty(h.ip)) sb.Append("  ").Append(h.ip);
+                sb.AppendLine();
+                var meta = new StringBuilder("   ");
+                if (!string.IsNullOrEmpty(h.mac)) meta.Append(h.mac);
+                if (!string.IsNullOrEmpty(h.brand)) meta.Append("  ").Append(h.brand);
+                if (!string.IsNullOrEmpty(h.band)) meta.Append("  ").Append(h.band);
+                if (h.active && (h.rateDown > 0 || h.rateUp > 0))
+                    meta.Append("  ↓").Append(Device.HumanRate(h.rateDown))
+                        .Append("  ↑").Append(Device.HumanRate(h.rateUp));
+                sb.AppendLine(meta.ToString());
+                shown++;
+            }
+            return sb.ToString().TrimEnd();
         }
 
         /// <summary>行首图标列，按 key 几何绘制，颜色跟随行主题色。</summary>
@@ -709,7 +776,18 @@ namespace HwWidget
         {
             base.OnMouseMove(e);
             if (dragging && !cfg.locked && (e.Button & MouseButtons.Left) != 0)
+            {
                 Location = new Point(Location.X + e.X - dragOff.X, Location.Y + e.Y - dragOff.Y);
+                HideHostsTip();
+            }
+            else
+                CheckHostsHover(e.Location);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e);
+            HideHostsTip();
         }
 
         protected override void OnMouseUp(MouseEventArgs e)
@@ -842,6 +920,7 @@ namespace HwWidget
             lock (devLock) if (dev != null) dev.Logout();
             SavePos();
             if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }
+            if (hostsPopup != null) { hostsPopup.Close(); hostsPopup = null; }
             Close();
         }
 
@@ -952,5 +1031,66 @@ namespace HwWidget
             e.TextColor = e.Item.Selected ? Color.FromArgb(230, 237, 243) : Color.FromArgb(201, 209, 217);
             base.OnRenderItemText(e);
         }
+    }
+
+    /// <summary>终端详情悬浮弹窗，无边框置顶小窗，自动跟随鼠标位置显示。
+    /// 用独立 Form 实现而不走 ToolTip，保证 .NET 4.0 csc 编译下可编译可控样式。</summary>
+    class HostsPopup : Form
+    {
+        string content = "";
+        Color bg, fg, border;
+        Font font;
+
+        public HostsPopup()
+        {
+            FormBorderStyle = FormBorderStyle.None;
+            StartPosition = FormStartPosition.Manual;
+            ShowInTaskbar = false;
+            TopMost = true;
+            AutoScaleMode = AutoScaleMode.None;
+            BackColor = Color.Fuchsia;
+            TransparencyKey = Color.Fuchsia;
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+        }
+
+        public void ShowContent(string text, Point screen, Color bg, Color fg, Color border, Font font)
+        {
+            if (text == content && Visible) return;
+            this.content = text;
+            this.bg = Color.White;
+            this.fg = Color.FromArgb(30, 30, 30);
+            this.border = Color.FromArgb(180, 180, 180);
+            this.font = font;
+            Size sz = TextRenderer.MeasureText(text, font, new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.NoPrefix);
+            int w = sz.Width + 24, h = sz.Height + 20;
+            Rectangle wa = Screen.PrimaryScreen.WorkingArea;
+            int x = Math.Min(screen.X, wa.Right - w - 4);
+            int y = Math.Min(screen.Y, wa.Bottom - h - 4);
+            SetBounds(x, y, w, h);
+            if (!Visible) Show();
+            else Invalidate();
+        }
+
+        public void HidePopup()
+        {
+            if (Visible) Hide();
+            content = "";
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            using (var b = new SolidBrush(Color.White))
+                g.FillRectangle(b, 1, 1, Width - 3, Height - 3);
+            using (var p = new Pen(Color.FromArgb(180, 180, 180)))
+                g.DrawRectangle(p, 1, 1, Width - 3, Height - 3);
+            TextRenderer.DrawText(g, content, font, new Rectangle(12, 10, Width - 24, Height - 20),
+                Color.FromArgb(30, 30, 30),
+                TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.NoPrefix);
+        }
+
+        protected override bool ShowWithoutActivation { get { return true; } }
     }
 }

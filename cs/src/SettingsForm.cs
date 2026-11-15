@@ -119,8 +119,10 @@ namespace HwWidget
 
             // 语言行（页面顶层，不在 GroupBox 内）
             langBox = new WinComboBox { Width = 160, Height = CtrlH };
-            langBox.Items.AddRange(new[] { "简体中文", "English", "繁體中文" });
-            langBox.SelectedIndex = cfg.language == "en" ? 1 : cfg.language == "zh-TW" ? 2 : 0;
+            string[] langNames = new string[L.Options.Length];
+            for (int li = 0; li < L.Options.Length; li++) langNames[li] = L.Options[li][0];
+            langBox.Items.AddRange(langNames);
+            langBox.SelectedIndex = L.IndexOf(cfg.language);
             langBox.SelectedIndexChanged += OnLanguageChanged;
             PlaceRow(p, y, L.T("lbl.language"), langBox);
             y += RowH + 6;
@@ -227,25 +229,46 @@ namespace HwWidget
             };
             Controls.Add(helpBtn);
 
-            resetBtn = new WinButton { Text = L.T("btn.reset"), Left = tabs.Right - 250, Top = tabs.Bottom + 10, Width = 82, Height = 26, TabIndex = 91 };
-            resetBtn.Click += delegate { SyncToCfg(); ResetDefaults(); BuildUi(); };
+            resetBtn = new WinButton { Text = L.T("btn.reset"), Height = 26, TabIndex = 91 };
+            resetBtn.Click += delegate { SyncToCfg(); ResetDefaults(); BuildUi(); LayoutFooterButtons(); };
             Controls.Add(resetBtn);
 
-            cancelBtn = new WinButton { Text = L.T("btn.cancel"), Left = tabs.Right - 162, Top = tabs.Bottom + 10, Width = 76, Height = 26, TabIndex = 92 };
+            cancelBtn = new WinButton { Text = L.T("btn.cancel"), Height = 26, TabIndex = 92 };
             cancelBtn.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
             Controls.Add(cancelBtn);
 
-            okBtn = new WinButton { Text = L.T("btn.save"), Left = tabs.Right - 80, Top = tabs.Bottom + 10, Width = 80, Height = 26, TabIndex = 93, Primary = true };
+            okBtn = new WinButton { Text = L.T("btn.save"), Height = 26, TabIndex = 93, Primary = true };
             okBtn.Click += delegate { SaveAndClose(); };
             Controls.Add(okBtn);
+
+            LayoutFooterButtons();
             AcceptButton = okBtn;
             CancelButton = cancelBtn;
+        }
+
+        /// <summary>按各按钮实际文本测量宽度，从右往左依次排布；语言切换后需重调，避免日/俄等较长译文被截断。</summary>
+        void LayoutFooterButtons()
+        {
+            const int gap = 8;
+            int right = tabs.Right;
+            int top = tabs.Bottom + 10;
+            okBtn.Text = L.T("btn.save");
+            okBtn.Width = Math.Max(80, MeasureTextW(okBtn.Text, Font) + 26);
+            okBtn.Left = right - okBtn.Width; okBtn.Top = top;
+
+            cancelBtn.Text = L.T("btn.cancel");
+            cancelBtn.Width = Math.Max(76, MeasureTextW(cancelBtn.Text, Font) + 26);
+            cancelBtn.Left = okBtn.Left - gap - cancelBtn.Width; cancelBtn.Top = top;
+
+            resetBtn.Text = L.T("btn.reset");
+            resetBtn.Width = Math.Max(82, MeasureTextW(resetBtn.Text, Font) + 26);
+            resetBtn.Left = cancelBtn.Left - gap - resetBtn.Width; resetBtn.Top = top;
         }
 
         // ================================================================ 语言实时切换
         void OnLanguageChanged(object sender, EventArgs e)
         {
-            string nl = langBox.SelectedIndex == 1 ? "en" : langBox.SelectedIndex == 2 ? "zh-TW" : "zh-CN";
+            string nl = L.Options[langBox.SelectedIndex][1];
             if (nl == cfg.language) return;
             // 避免在 SelectedIndexChanged 回调里直接 dispose sender，延后一帧重建
             BeginInvoke(new Action(delegate
@@ -255,9 +278,7 @@ namespace HwWidget
                 L.Lang = nl;               // 全局语言立即生效（悬浮窗也同步）
                 Text = L.T("win.title");
                 BuildUi();                 // 重建界面（tab 头 / GroupBox / 所有标签重新测量布局）
-                resetBtn.Text = L.T("btn.reset");
-                cancelBtn.Text = L.T("btn.cancel");
-                okBtn.Text = L.T("btn.save");
+                LayoutFooterButtons();     // 底部按钮随语言重新测量宽度与位置
             }));
         }
 

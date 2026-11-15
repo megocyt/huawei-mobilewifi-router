@@ -23,7 +23,7 @@ namespace HwWidget
         public string host = "192.168.8.1";
         public string user = "admin";
         public string password = "";
-        public string language = "zh-CN";                    // zh-CN | en | zh-TW
+        public string language = "zh-CN";                    // zh-CN | en | zh-TW | ja | ru | ko
         public double interval = 3.0;
         public double alpha = 0.88;
         public string fontFam = "Microsoft YaHei UI";
@@ -124,9 +124,16 @@ namespace HwWidget
         {
             if (string.IsNullOrEmpty(c.password))
                 c.password = Environment.GetEnvironmentVariable("HWIFI_PASSWORD") ?? "";
-            if (c.language != "en" && c.language != "zh-TW") c.language = "zh-CN";
+            if (!IsKnownLang(c.language)) c.language = "zh-CN";
             L.Lang = c.language;
             return c;
+        }
+
+        static bool IsKnownLang(string code)
+        {
+            for (int i = 0; i < L.Options.Length; i++)
+                if (L.Options[i][1] == code) return true;
+            return false;
         }
 
         // ---------------------------------------------------------------- 写入

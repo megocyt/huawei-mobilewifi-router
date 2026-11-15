@@ -38,6 +38,7 @@ namespace HwWidget
 
         Font fTitle, fLabel, fValue, fMono;
         int rowH, labelW;                       // 统一行高与标签列宽，保证两列对齐
+        string appliedLang = "";                // labelW 所依据的语言，用于语言实时切换后重算列宽
         const int W = 396, Pad = 14, Rad = 12, RowGap = 4, IconW = 22;
         Point dragOff;
         bool dragging;
@@ -125,6 +126,8 @@ namespace HwWidget
         /// 每秒重新写入当前时间，时间看起来才会一秒一跳。</summary>
         void OnClockTick(object sender, EventArgs e)
         {
+            // 语言实时切换（未保存预览）：重建行（刷新标签文字）并重算标签列宽，避免长译文截断
+            if (appliedLang != L.Lang) { Relayout(); return; }
             if (snap == null) return;
             string now = DateTime.Now.ToString("HH:mm:ss");
             foreach (var r in rows)
@@ -155,6 +158,12 @@ namespace HwWidget
             fValue = new Font(cfg.fontFam, size, FontStyle.Regular);
             fMono = new Font("Consolas", size, FontStyle.Regular);
             rowH = Math.Max(Math.Max(fValue.Height, fLabel.Height), fMono.Height);
+            ComputeLabelWidth();
+        }
+
+        /// <summary>按当前语言的各标签实测最大宽度算标签列宽（字体不随语言变，只有列宽需要）。</summary>
+        void ComputeLabelWidth()
+        {
             string[] probes = { L.T("lbl.network"), L.T("lbl.model"), L.T("lbl.signal"), L.T("lbl.rate"), L.T("lbl.plan"),
                                 L.T("lbl.traffic"), L.T("lbl.hosts"), L.T("lbl.battery"), L.T("lbl.local"),
                                 L.T("lbl.wan"), L.T("lbl.v6"), L.T("lbl.uptime"), L.T("lbl.sms"), L.T("lbl.clock"),
@@ -166,6 +175,7 @@ namespace HwWidget
                 if (w2 > lw) lw = w2;
             }
             labelW = lw + 2;
+            appliedLang = L.Lang;
         }
 
         void ApplyChrome()
@@ -356,6 +366,7 @@ namespace HwWidget
 
         void Relayout()
         {
+            if (appliedLang != L.Lang) ComputeLabelWidth();   // 语言实时切换后（未保存预览时）也重算列宽，避免长译文标签被截断
             rows = BuildRows().ToArray();
             int h = HeaderHeight();
             rowTops = new int[rows.Length];

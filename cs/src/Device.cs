@@ -401,6 +401,15 @@ namespace HwWidget
             signature = Hex(s);
         }
 
+        // 与 python 版对齐：只有设备侧的限流/凭证类错误码才拉长退避，
+        // 网络抖动或一次性异常不冲击退避窗口（对应 login() 里的 e.code 判定）。
+        static readonly HashSet<string> RateLimitCodes = new HashSet<string>
+            { "108003", "108005", "108006", "125001" };
+        // 会话位被网页后台/上一次 logout 作废时，重登会被回这两个码，
+        // 需要清 cookie 重开页面拿新 SessionID 再试一次。
+        static readonly HashSet<string> DeadSessionCodes = new HashSet<string>
+            { "125002", "125003" };
+
         public bool Login(bool force)
         {
             if (loggedIn && !force) return true;
@@ -415,49 +424,81 @@ namespace HwWidget
                     loggedIn = true;
                     return true;
                 }
-                if (!RefreshToken()) { Block(L.T("err.token")); return false; }
-                string first = NewNonce();
-                var ch = Post("/api/user/challenge_login", Dict(
-                    "username", user, "firstnonce", first, "mode", 1));
-                string fail = Fail(ch);
-                if (fail != null) { Block(fail); return false; }
-                string salt = Str(ch, "salt"), serverNonce = Str(ch, "servernonce");
-                int iter;
-                if (!int.TryParse(Str(ch, "iterations"), out iter) || salt.Length < 8 || serverNonce.Length < 8)
+                for (int attempt = 1; attempt <= 2; attempt++)
                 {
-                    Block(L.T("err.challenge"));
+                    string code, why;
+                    if (TryScramLogin(out code, out why))
+                    {
+                        loggedIn = true;
+                        fails = 0;
+                        errText = "";
+                        return true;
+                    }
+                    // 会话死：清 cookie + 重新拿 SessionID，再走一次 SCRAM
+                    if (attempt == 1 && DeadSessionCodes.Contains(code))
+                    {
+                        ForgetSession();
+                        Request("/", null, false);
+                        continue;
+                    }
+                    Block(why, code);
                     return false;
                 }
-                string proof, expect;
-                Scram(password, salt, iter, first, serverNonce, out proof, out expect);
-                if (!RefreshToken()) { Block(L.T("err.token")); return false; }
-                var au = Post("/api/user/authentication_login", Dict("clientproof", proof, "finalnonce", serverNonce));
-                fail = Fail(au);
-                if (fail != null) { Block(fail); return false; }
-                string gotSig = Str(au, "serversignature");
-                if (gotSig.Length > 0 && !string.Equals(gotSig, expect, StringComparison.OrdinalIgnoreCase))
-                {
-                    Block(L.T("err.signature"));
-                    return false;
-                }
-                loggedIn = true;
-                fails = 0;
-                return true;
+                return false;
             }
             catch (Exception e)
             {
-                Block(e.Message);
+                Block(e.Message, "");
                 return false;
             }
         }
 
-        void Block(string why)
+        /// <summary>跑一遍 challenge_login → SCRAM → authentication_login。
+        /// 成功返回 true；失败时把设备错误码写入 <paramref name="code"/>、
+        /// 展示文案写入 <paramref name="why"/>（本地/网络类失败 code 为 "local" 或 ""）。</summary>
+        bool TryScramLogin(out string code, out string why)
+        {
+            code = null; why = null;
+            if (!RefreshToken()) { code = "local"; why = L.T("err.token"); return false; }
+            string first = NewNonce();
+            var ch = Post("/api/user/challenge_login", Dict(
+                "username", user, "firstnonce", first, "mode", 1));
+            code = Str(ch, "__code");
+            if (code.Length > 0) { why = Fail(ch); return false; }
+            string salt = Str(ch, "salt"), serverNonce = Str(ch, "servernonce");
+            int iter;
+            if (!int.TryParse(Str(ch, "iterations"), out iter) || salt.Length < 8 || serverNonce.Length < 8)
+            {
+                code = "local"; why = L.T("err.challenge");
+                return false;
+            }
+            string proof, expect;
+            Scram(password, salt, iter, first, serverNonce, out proof, out expect);
+            if (!RefreshToken()) { code = "local"; why = L.T("err.token"); return false; }
+            var au = Post("/api/user/authentication_login", Dict("clientproof", proof, "finalnonce", serverNonce));
+            code = Str(au, "__code");
+            if (code.Length > 0) { why = Fail(au); return false; }
+            string gotSig = Str(au, "serversignature");
+            if (gotSig.Length > 0 && !string.Equals(gotSig, expect, StringComparison.OrdinalIgnoreCase))
+            {
+                code = "local"; why = L.T("err.signature");
+                return false;
+            }
+            return true;
+        }
+
+        void Block(string why, string code)
         {
             loggedIn = false;
             errText = why;
-            fails++;
-            long now = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
-            blockedUntil = now + Math.Min(900000, 30000 * (1L << Math.Min(5, fails)));
+            // 与 python 版一致：30s → 60s → 120s → 240s → 480s → 900s，首次 30s。
+            // 且只在设备限流类错误码上递增退避，网络抖动/单次异常不进入冷却。
+            if (RateLimitCodes.Contains(code))
+            {
+                fails++;
+                long now = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
+                blockedUntil = now + Math.Min(900000L, 30000L * (1L << Math.Min(5, fails - 1)));
+            }
         }
 
         // ------------------------------------------------------------ 下挂终端与窗口均速

@@ -419,7 +419,7 @@ namespace HwWidget
             if (ClientSize.Height != h || ClientSize.Width != W)
             {
                 ClientSize = new Size(W, h);
-                using (var p = Round(new Rectangle(0, 0, W - 1, h - 1), Rad))
+                using (var p = Round(new Rectangle(0, 0, W, h), Rad))
                 {
                     if (Region != null) Region.Dispose();
                     Region = new Region(p);
@@ -446,13 +446,7 @@ namespace HwWidget
 
             Color accent = Col("accent");
             Color line = Blend(bg, Color.White, 0.14f);
-            // 顶部一条渐隐的主色光带，科技感点睛
-            using (var glow = new LinearGradientBrush(new Rectangle(0, 0, rc.Width, 3),
-                      Color.FromArgb(0, accent), Color.FromArgb(150, accent), 0f))
-                g.FillRectangle(glow, new Rectangle(0, 0, rc.Width, 3));
-            using (var p = Round(rc, Rad))
-            using (var pen = new Pen(Blend(bg, Color.White, 0.22f), 1))
-                g.DrawPath(pen, p);
+            // 不再绘制顶部主色光带与整圈描边（用户不想要顶部那条线）；圆角由 Region 裁剪保证
             if (cfg.clickThrough)
             {
                 // 穿透模式虚线描边：语言无关地提示当前窗口对鼠标“惰性可穿透”

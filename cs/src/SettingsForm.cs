@@ -164,7 +164,7 @@ namespace HwWidget
             string[] fams = new string[FontFamily.Families.Length];
             int fi = 0;
             foreach (FontFamily ff in FontFamily.Families) fams[fi++] = ff.Name;
-            fontBox = new FlatCombo(fams) { Left = CX, Top = y, Width = 210, Height = 24 };
+            fontBox = new FlatCombo(fams) { Left = CX, Top = y, Width = 300, Height = 24 };
             fontBox.SelectedItem = cfg.fontFam;
             p.Controls.Add(fontBox);
             y += 48;

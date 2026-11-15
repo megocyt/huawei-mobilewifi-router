@@ -36,6 +36,8 @@ namespace HwWidget
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
+            // 标题栏左上角 logo：与托盘同一内嵌 ico，取 32px 帧保证高 DPI 不模糊
+            try { Icon = TrayIcon.MakeFor(32); ShowIcon = true; } catch { }
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Microsoft YaHei UI", 9f);
             TopMost = true;

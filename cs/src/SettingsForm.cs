@@ -1,283 +1,324 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Windows.Forms;
 
 namespace HwWidget
 {
-    /// <summary>设置窗口：浅色原生外观，顶部水平选项卡分页。</summary>
-    public class SettingsForm : Form
+    /// <summary>设置窗口：经典 Win32 自绘控件风格（带动画），支持语言实时切换。
+    /// 切换语言时先把当前控件值同步进 cfg，再用新语言重建整个界面。</summary>
+    public class SettingsForm : Form, IMessageFilter
     {
-        readonly Cfg cfg;                          // 对话框内编辑副本
+        readonly Cfg cfg;
         public Cfg Result { get { return cfg; } }
 
-        SpinBox ivlBox, sizeBox;
-        TrackBar alphaBar;
-        Label alphaLbl;
-        CheckBox savePwdBox, topBox, lockBox, borderBox, titleBox;
-        readonly Dictionary<string, CheckBox> rowBoxes = new Dictionary<string, CheckBox>();
+        WinTabControl tabs;
+        WinTextBox hostBox, userBox, pwdBox;
+        WinNumeric ivlBox, sizeBox;
+        WinTrackBar alphaBar;
+        Label alphaVal;
+        WinComboBox langBox, fontBox;
+        WinCheckBox savePwdBox, topBox, lockBox, borderBox, titleBox;
+        readonly Dictionary<string, WinCheckBox> rowBoxes = new Dictionary<string, WinCheckBox>();
         readonly Dictionary<string, ColorBox> colorBtns = new Dictionary<string, ColorBox>();
+        readonly Dictionary<string, Label> i18nLabels = new Dictionary<string, Label>();
         static readonly string[] ColorKeys = { "fg", "bg", "accent", "warn", "bad" };
 
-        FlatCombo langBox;
-        FlatCombo fontBox;
-        TextBox hostBox, userBox, pwdBox;
+        WinButton resetBtn, cancelBtn, okBtn;
+        Button helpBtn;
 
-        // 标签列起始 X 固定；控件列起点 CX、窗宽、颜色/行为列间距会根据当前语言
-        // 测量标签宽度动态计算，避免英文/繁体长标签压到控件上。
-        const int LX = 18;
-        int CX = 96;
-        int formW = 520;
-        int colorColSpace = 84;
-        int colorBoxOffset = 40;
-        int behaviorCol2 = 240;
-        int rowColSpace = 230;
+        const int PageW = 560;            // tab 内容宽度（加宽以容纳英文长标签，避免横向裁切）
+        const int Gutter = 14;            // GroupBox 左边距
+        const int RowH = 34;              // 表单行高（含间距）
+        const int FirstY = 28;            // GroupBox 内首行 Y（标题下方留白）
+        const int CtrlH = 24;             // 统一控件高度
+        const int PageH = 440;            // tab 内容高度（加高使外观页大多内容默认可见）
+        const int ScrollReserve = 22;     // 为垂直滚动条预留宽度，避免多余横向滚动条
+        int GbW { get { return PageW - Gutter * 2 - ScrollReserve; } }   // GroupBox 统一宽度
 
         public SettingsForm(Cfg current)
         {
             cfg = current.CloneLike();
+
             SuspendLayout();
             Text = L.T("win.title");
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
-            // 标题栏左上角 logo：与托盘同一内嵌 ico，取 32px 帧保证高 DPI 不模糊
             try { Icon = TrayIcon.MakeFor(32); ShowIcon = true; } catch { }
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Microsoft YaHei UI", 9f);
+            AutoScaleMode = AutoScaleMode.None;   // 与自绘控件库一致：像素级 1:1 布局，避免 DPI 缩放导致控件宽度与绘制文字量度不一致而截断
+            BackColor = SystemColors.Control;
             TopMost = true;
 
-            // 依当前语言测量所有左列标签，动态规划列宽与窗宽
-            ComputeLayout();
-            ClientSize = new Size(formW, 552);
-
-            int tabsW = Math.Max(500, formW - 20);
-            var tabs = new FlatTabControl { Left = 10, Top = 8, Width = tabsW, Height = 492 };
-            var tConn = new TabPage(L.T("tab.conn")) { BackColor = Color.White };
-            var tLook = new TabPage(L.T("tab.look")) { BackColor = Color.White };
-            var tRows = new TabPage(L.T("tab.rows")) { BackColor = Color.White };
-            tabs.TabPages.Add(tConn);
-            tabs.TabPages.Add(tLook);
-            tabs.TabPages.Add(tRows);
+            tabs = new WinTabControl { Left = 10, Top = 8, Width = PageW, Height = PageH };
             Controls.Add(tabs);
+            Application.AddMessageFilter(this);   // 拦截滚轮，转发到当前 tab 页，保证内容超高时可滚动
 
-            BuildConnPage(tConn);
-            BuildLookPage(tLook);
-            BuildRowsPage(tRows);
+            BuildUi();
+            BuildFooter();
 
-            int btnRight = tabs.Left + tabs.Width;
-            var cancel = new Button { Text = L.T("btn.cancel"), Left = btnRight - 220, Top = 510, Width = 100, Height = 30 };
-            cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
-            Controls.Add(cancel);
-            var ok = new Button { Text = L.T("btn.save"), Left = btnRight - 110, Top = 510, Width = 100, Height = 30 };
-            ok.Click += delegate { SaveAndClose(); };
-            Controls.Add(ok);
-            AcceptButton = ok;
-
+            ClientSize = new Size(tabs.Right + 10, tabs.Bottom + 42);
             ResumeLayout(false);
         }
 
-        // 按语言测量：标签列宽 CX、颜色列间距、行为第二列 X、显示内容列间距、窗宽
-        void ComputeLayout()
+        // ================================================================ 界面构建
+        void BuildUi()
         {
-            string[] leftLabels = { "lbl.host", "lbl.user", "lbl.pwd", "lbl.interval",
-                                    "lbl.opacity", "lbl.fontsize", "lbl.font", "lbl.language" };
-            int maxLeft = 0;
-            foreach (var k in leftLabels)
-            {
-                int w = TextRenderer.MeasureText(L.T(k), Font).Width;
-                if (w > maxLeft) maxLeft = w;
-            }
-            CX = Math.Max(96, LX + maxLeft + 14);
+            tabs.ResetPages();          // 先清空 captions / pages，避免语言切换重建时叠加
+            tabs.Controls.Clear();
+            i18nLabels.Clear();
+            rowBoxes.Clear();
+            colorBtns.Clear();
 
-            int maxColor = 0;
-            foreach (var key in ColorKeys)
-            {
-                int w = TextRenderer.MeasureText(L.T("color." + key), Font).Width;
-                if (w > maxColor) maxColor = w;
-            }
-            colorBoxOffset = Math.Max(40, maxColor + 8);            // 标签后留 8px 间隙再放色块
-            colorColSpace = colorBoxOffset + 26 + 12;               // 色块右边到下一列标签起始留 12px
-
-            int wTop = TextRenderer.MeasureText(L.T("chk.top"), Font).Width + 22;
-            int wLock = TextRenderer.MeasureText(L.T("chk.lock"), Font).Width + 22;
-            behaviorCol2 = Math.Max(240, LX + 4 + Math.Max(wTop, wLock) + 20);
-
-            int maxRow = 0;
-            foreach (var k in Cfg.RowKeys)
-            {
-                int w = TextRenderer.MeasureText(L.T("row." + k), Font).Width + 22;
-                if (w > maxRow) maxRow = w;
-            }
-            rowColSpace = Math.Max(230, maxRow + 20);
-
-            // 窗宽取多项最大值：默认 520、颜色行总宽、行为行右端 + 边距、显示内容行右端 + 边距
-            int needColor = LX + colorColSpace * (ColorKeys.Length - 1) + colorBoxOffset + 26 + 40;
-            int needBeh = behaviorCol2 + TextRenderer.MeasureText(L.T("chk.border"), Font).Width + 60;
-            int needRow = LX + rowColSpace + maxRow + 60;
-            int needHost = CX + 200 + 20 + TextRenderer.MeasureText(L.T("hint.host"), Font).Width + 40;
-            formW = Math.Max(520, Math.Max(Math.Max(needColor, needBeh), Math.Max(needRow, needHost)));
-            if (formW > 900) formW = 900;
+            var tConn = tabs.AddPage(L.T("tab.conn"));
+            var tLook = tabs.AddPage(L.T("tab.look"));
+            var tRows = tabs.AddPage(L.T("tab.rows"));
+            BuildConnPage(tConn);
+            BuildLookPage(tLook);
+            BuildRowsPage(tRows);
+            tabs.SelectedIndex = 0;
         }
 
-        // ---------------------------------------------------------------- 公共小件
-        static void Lbl(Control p, int y, string text)
+        void BuildConnPage(Panel p)
         {
-            p.Controls.Add(new Label { Text = text, Left = LX, Top = y + 4, AutoSize = true });
+            var gb = new WinGroupBox { Text = "", Caption = L.T("grp.device"), Left = Gutter, Top = 10, Width = GbW };
+            int gy = FirstY;
+
+            hostBox = MakeTextBox(cfg.host, 180, false);
+            PlaceRow(gb, gy, L.T("lbl.host"), hostBox);
+            gy += RowH;
+
+            userBox = MakeTextBox(cfg.user, 180, false);
+            PlaceRow(gb, gy, L.T("lbl.user"), userBox);
+            gy += RowH;
+
+            pwdBox = MakeTextBox(cfg.password, 180, true);
+            PlaceRow(gb, gy, L.T("lbl.pwd"), pwdBox);
+            gy += RowH;
+
+            ivlBox = new WinNumeric { Minimum = 2, Maximum = 120, Value = (decimal)Math.Max(2, Math.Min(120, cfg.interval)), Width = 74, Height = CtrlH };
+            PlaceRow(gb, gy, L.T("lbl.interval"), ivlBox);
+            gy += RowH + 4;
+            gb.Height = gy;
+            p.Controls.Add(gb);
+
+            var gbSec = new WinGroupBox { Caption = L.T("grp.security"), Left = Gutter, Top = gb.Bottom + 12, Width = GbW, Height = FirstY + 26 + 12 };
+            savePwdBox = MakeCheck(L.T("chk.savepwd"), cfg.savePassword);
+            savePwdBox.Left = 16; savePwdBox.Top = FirstY;
+            gbSec.Controls.Add(savePwdBox);
+            p.Controls.Add(gbSec);
         }
 
-        static void Hint(Control p, int x, int y, string text)
+        void BuildLookPage(Panel p)
         {
-            p.Controls.Add(new Label { Text = text, Left = x, Top = y + 4, AutoSize = true, ForeColor = Color.FromArgb(120, 126, 133) });
-        }
+            int y = 10;
 
-        TextBox Tbx(Control p, int y, int w, string text)
-        {
-            var box = new LineBox { Left = CX, Top = y, Width = w, Height = 24 };
-            var t = new TextBox { Text = text, BorderStyle = BorderStyle.None, BackColor = Color.White };
-            t.Left = 6;
-            t.Top = (box.Height - t.Height) / 2;
-            t.Width = w - 12;
-            box.Controls.Add(t);
-            p.Controls.Add(box);
-            return t;
-        }
-
-        static LineBox WrapBox(Control p, int x, int y, int w)
-        {
-            var box = new LineBox { Left = x, Top = y, Width = w, Height = 24 };
-            p.Controls.Add(box);
-            return box;
-        }
-
-        static CheckBox Chk(Control p, int x, int y, string text, bool on)
-        {
-            var c = new CheckBox { Text = text, Left = x, Top = y, AutoSize = true, Checked = on };
-            p.Controls.Add(c);
-            return c;
-        }
-
-        // ---------------------------------------------------------------- 连接页
-        void BuildConnPage(TabPage p)
-        {
-            int y = 18;
-            Lbl(p, y, L.T("lbl.host"));
-            hostBox = Tbx(p, y, 200, cfg.host);
-            Hint(p, CX + 210, y, L.T("hint.host"));
-            y += 38;
-            Lbl(p, y, L.T("lbl.user"));
-            userBox = Tbx(p, y, 200, cfg.user);
-            y += 38;
-            Lbl(p, y, L.T("lbl.pwd"));
-            pwdBox = Tbx(p, y, 200, cfg.password);
-            pwdBox.UseSystemPasswordChar = true;
-            y += 38;
-            Lbl(p, y, L.T("lbl.interval"));
-            ivlBox = new SpinBox { Left = CX, Top = y, Width = 70, Height = 24, Minimum = 2, Maximum = 120, Increment = 1, Value = (decimal)Math.Max(2, Math.Min(120, cfg.interval)) };
-            p.Controls.Add(ivlBox);
-            y += 44;
-            savePwdBox = Chk(p, LX, y, L.T("chk.savepwd"), cfg.savePassword);
-        }
-
-        // ---------------------------------------------------------------- 外观页
-        void BuildLookPage(TabPage p)
-        {
-            int y = 18;
-            Lbl(p, y, L.T("lbl.language"));
-            langBox = new FlatCombo(new string[] { "简体中文", "English", "繁體中文" }) { Left = CX, Top = y, Width = 130, Height = 24 };
+            // 语言行（页面顶层，不在 GroupBox 内）
+            langBox = new WinComboBox { Width = 160, Height = CtrlH };
+            langBox.Items.AddRange(new[] { "简体中文", "English", "繁體中文" });
             langBox.SelectedIndex = cfg.language == "en" ? 1 : cfg.language == "zh-TW" ? 2 : 0;
-            p.Controls.Add(langBox);
-            y += 38;
+            langBox.SelectedIndexChanged += OnLanguageChanged;
+            PlaceRow(p, y, L.T("lbl.language"), langBox);
+            y += RowH + 6;
 
-            Lbl(p, y, L.T("lbl.opacity"));
-            alphaBar = new TrackBar { Left = CX - 4, Top = y - 6, Width = 200, Minimum = 25, Maximum = 100, TickStyle = TickStyle.None };
-            alphaBar.Value = (int)Math.Round(cfg.alpha * 100);
-            alphaLbl = new Label { Left = 300, Top = y + 4, Width = 46, AutoSize = false };
-            alphaBar.Scroll += delegate { alphaLbl.Text = alphaBar.Value + "%"; };
-            alphaLbl.Text = alphaBar.Value + "%";
-            p.Controls.Add(alphaBar);
-            p.Controls.Add(alphaLbl);
-            y += 48;
+            // 字体组
+            var gbFont = new WinGroupBox { Caption = L.T("grp.font"), Left = Gutter, Top = y, Width = GbW };
+            int fy = FirstY;
+            sizeBox = new WinNumeric { Minimum = 9, Maximum = 30, Value = ClampSize(cfg.fontSize), Width = 74, Height = CtrlH };
+            PlaceRow(gbFont, fy, L.T("lbl.fontsize"), sizeBox);
+            fy += RowH;
 
-            Lbl(p, y, L.T("lbl.fontsize"));
-            sizeBox = new SpinBox { Left = CX, Top = y, Width = 60, Height = 24, Minimum = 9, Maximum = 30, Increment = 1, Value = cfg.fontSize };
-            p.Controls.Add(sizeBox);
-            y += 38;
+            alphaBar = new WinTrackBar { Minimum = 25, Maximum = 100, Value = (int)Math.Round(cfg.alpha * 100), Width = 180, Height = CtrlH + 4 };
+            alphaVal = new Label { Text = alphaBar.Value + "%", AutoSize = true, ForeColor = Color.Gray };
+            alphaBar.ValueChanged += delegate { alphaVal.Text = alphaBar.Value + "%"; };
+            PlaceRow(gbFont, fy, L.T("lbl.opacity"), alphaBar, alphaVal);
+            fy += RowH + 2;
 
-            Lbl(p, y, L.T("lbl.font"));
             string[] fams = new string[FontFamily.Families.Length];
             int fi = 0;
             foreach (FontFamily ff in FontFamily.Families) fams[fi++] = ff.Name;
-            fontBox = new FlatCombo(fams) { Left = CX, Top = y, Width = 300, Height = 24 };
-            fontBox.SelectedItem = cfg.fontFam;
-            p.Controls.Add(fontBox);
-            y += 48;
+            fontBox = new WinComboBox { Width = 260, Height = CtrlH };
+            fontBox.Items.AddRange(fams);
+            int fsi = Array.IndexOf(fams, cfg.fontFam);
+            fontBox.SelectedIndex = fsi >= 0 ? fsi : 0;
+            PlaceRow(gbFont, fy, L.T("lbl.font"), fontBox);
+            fy += RowH + 4;
+            gbFont.Height = fy;
+            p.Controls.Add(gbFont);
+            y = gbFont.Bottom + 12;
 
-            p.Controls.Add(new Label { Text = L.T("grp.color"), Left = LX, Top = y, AutoSize = true, Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold) });
-            y += 26;
+            // 颜色组
+            var gbColor = new WinGroupBox { Caption = L.T("grp.color"), Left = Gutter, Top = y, Width = GbW, Height = 22 + 20 + 34 + 12 };
+            int innerW = gbColor.Width - 28;
+            int cellW = innerW / ColorKeys.Length;
             for (int i = 0; i < ColorKeys.Length; i++)
             {
-                int col = i;
-                int colX = LX + col * colorColSpace;
-                p.Controls.Add(new Label { Text = L.T("color." + ColorKeys[col]), Left = colX, Top = y + 4, AutoSize = true });
-                var b = new ColorBox { Left = colX + colorBoxOffset, Top = y, Width = 26, Height = 24, Value = Hex(ColorOf(cfg, ColorKeys[col])) };
-                string key = ColorKeys[col];
-                b.Click += delegate { PickColor(key, b); };
-                p.Controls.Add(b);
+                var key = ColorKeys[i];
+                int cellX = 14 + i * cellW;
+                var nameLbl = new Label { Text = L.T("color." + key), Left = cellX, Top = 24, Width = cellW - 4, AutoSize = false, TextAlign = ContentAlignment.MiddleCenter };
+                // 用窗体实际字体（微软雅黑 9pt）测量，而非尚未继承父字体前的默认字体；超宽则逐级缩小字号避免裁切
+                Font mfont = Font;
+                float fs = Font.Size;
+                while (TextRenderer.MeasureText(nameLbl.Text, mfont).Width > cellW - 4 && fs > 6.5f)
+                {
+                    fs -= 0.5f;
+                    mfont = new Font(Font.FontFamily, fs);
+                    nameLbl.Font = mfont;
+                }
+                gbColor.Controls.Add(nameLbl);
+                var b = new ColorBox { Left = cellX + 2, Top = 50, Width = cellW - 10, Height = 22, Value = ColorTranslator.FromHtml(HexOf(cfg, key)) };
+                string kk = key;
+                b.Click += delegate { PickColor(kk, b); };
+                gbColor.Controls.Add(b);
                 colorBtns[key] = b;
             }
-            y += 42;
+            p.Controls.Add(gbColor);
+            y = gbColor.Bottom + 12;
 
-            p.Controls.Add(new Label { Text = L.T("grp.behavior"), Left = LX, Top = y, AutoSize = true, Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold) });
-            y += 26;
-            topBox = Chk(p, LX + 4, y, L.T("chk.top"), cfg.topmost);
-            borderBox = Chk(p, behaviorCol2, y, L.T("chk.border"), cfg.borderless);
-            y += 30;
-            lockBox = Chk(p, LX + 4, y, L.T("chk.lock"), cfg.locked);
-            titleBox = Chk(p, behaviorCol2, y, L.T("chk.title"), cfg.showTitle);
+            // 行为组
+            var gbBeh = new WinGroupBox { Caption = L.T("grp.behavior"), Left = Gutter, Top = y, Width = GbW, Height = FirstY + 30 * 2 + 10 };
+            int col2 = 16 + Math.Max(TextRenderer.MeasureText(L.T("chk.top"), Font).Width,
+                                     TextRenderer.MeasureText(L.T("chk.lock"), Font).Width) + 34;
+            topBox = MakeCheck(L.T("chk.top"), cfg.topmost);
+            topBox.Left = 16; topBox.Top = FirstY;
+            borderBox = MakeCheck(L.T("chk.border"), cfg.borderless);
+            borderBox.Left = col2; borderBox.Top = FirstY;
+            lockBox = MakeCheck(L.T("chk.lock"), cfg.locked);
+            lockBox.Left = 16; lockBox.Top = FirstY + 30;
+            titleBox = MakeCheck(L.T("chk.title"), cfg.showTitle);
+            titleBox.Left = col2; titleBox.Top = FirstY + 30;
+            gbBeh.Controls.Add(topBox);
+            gbBeh.Controls.Add(borderBox);
+            gbBeh.Controls.Add(lockBox);
+            gbBeh.Controls.Add(titleBox);
+            p.Controls.Add(gbBeh);
         }
 
-        // ---------------------------------------------------------------- 显示内容页
-        void BuildRowsPage(TabPage p)
+        void BuildRowsPage(Panel p)
         {
+            var gb = new WinGroupBox { Caption = L.T("tab.rows"), Left = Gutter, Top = 10, Width = GbW };
+            int colW = (gb.Width - 24) / 2;
+            int rows = (Cfg.RowKeys.Length + 1) / 2;
+            gb.Height = FirstY + rows * 26 + 6;
             for (int i = 0; i < Cfg.RowKeys.Length; i++)
             {
-                string k = Cfg.RowKeys[i];
-                var c = Chk(p, LX + (i % 2) * rowColSpace, 18 + (i / 2) * 32, L.T("row." + k), cfg.rows[k]);
+                var k = Cfg.RowKeys[i];
+                bool on;
+                cfg.rows.TryGetValue(k, out on);
+                var c = MakeCheck(L.T("row." + k), on);
+                c.Left = 14 + (i % 2) * colW;
+                c.Top = FirstY + (i / 2) * 26;
+                gb.Controls.Add(c);
                 rowBoxes[k] = c;
             }
+            p.Controls.Add(gb);
         }
 
-        // ---------------------------------------------------------------- 保存
-        void PickColor(string key, ColorBox b)
+        void BuildFooter()
         {
-            using (var dlg = new ColorDialog())
+            helpBtn = new Button { Text = "?", Left = tabs.Left + 2, Top = tabs.Bottom + 10, Width = 28, Height = 26, FlatStyle = FlatStyle.System, TabIndex = 90 };
+            helpBtn.Click += delegate
             {
-                dlg.FullOpen = true;
-                dlg.Color = Hex(ColorOf(cfg, key));
-                if (dlg.ShowDialog(this) == DialogResult.OK)
-                {
-                    string hex = "#" + dlg.Color.R.ToString("x2", CultureInfo.InvariantCulture)
-                                      + dlg.Color.G.ToString("x2", CultureInfo.InvariantCulture)
-                                      + dlg.Color.B.ToString("x2", CultureInfo.InvariantCulture);
-                    SetColor(cfg, key, hex);
-                    b.Value = dlg.Color;
-                }
-            }
+                MessageBox.Show(this, L.T("tip.now"), L.T("win.title"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+            };
+            Controls.Add(helpBtn);
+
+            resetBtn = new WinButton { Text = L.T("btn.reset"), Left = tabs.Right - 250, Top = tabs.Bottom + 10, Width = 82, Height = 26, TabIndex = 91 };
+            resetBtn.Click += delegate { SyncToCfg(); ResetDefaults(); BuildUi(); };
+            Controls.Add(resetBtn);
+
+            cancelBtn = new WinButton { Text = L.T("btn.cancel"), Left = tabs.Right - 162, Top = tabs.Bottom + 10, Width = 76, Height = 26, TabIndex = 92 };
+            cancelBtn.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
+            Controls.Add(cancelBtn);
+
+            okBtn = new WinButton { Text = L.T("btn.save"), Left = tabs.Right - 80, Top = tabs.Bottom + 10, Width = 80, Height = 26, TabIndex = 93, Primary = true };
+            okBtn.Click += delegate { SaveAndClose(); };
+            Controls.Add(okBtn);
+            AcceptButton = okBtn;
+            CancelButton = cancelBtn;
         }
 
-        static Color ColorOf(Cfg c, string key)
+        // ================================================================ 语言实时切换
+        void OnLanguageChanged(object sender, EventArgs e)
+        {
+            string nl = langBox.SelectedIndex == 1 ? "en" : langBox.SelectedIndex == 2 ? "zh-TW" : "zh-CN";
+            if (nl == cfg.language) return;
+            // 避免在 SelectedIndexChanged 回调里直接 dispose sender，延后一帧重建
+            BeginInvoke(new Action(delegate
+            {
+                SyncToCfg();               // 先保住用户已编辑的值
+                cfg.language = nl;
+                L.Lang = nl;               // 全局语言立即生效（悬浮窗也同步）
+                Text = L.T("win.title");
+                BuildUi();                 // 重建界面（tab 头 / GroupBox / 所有标签重新测量布局）
+                resetBtn.Text = L.T("btn.reset");
+                cancelBtn.Text = L.T("btn.cancel");
+                okBtn.Text = L.T("btn.save");
+            }));
+        }
+
+        // ================================================================ 布局辅助
+        WinTextBox MakeTextBox(string text, int width, bool pwd)
+        {
+            var t = new WinTextBox { Width = width };
+            t.TextValue = text;
+            t.UseSystemPasswordChar = pwd;
+            return t;
+        }
+
+        /// <summary>用窗体实际字体显式算宽，关闭 AutoSize，彻底避免继承前测量字体偏小导致的文字截断。</summary>
+        WinCheckBox MakeCheck(string text, bool chk)
+        {
+            var c = new WinCheckBox { Text = text, Checked = chk, AutoSize = false };
+            c.Width = MeasureTextW(text, Font) + 28;
+            c.Height = Math.Max(20, Font.Height + 4);
+            return c;
+        }
+
+        /// <summary>按 NoPrefix 量宽，与 WinCheckBox 绘制时的 TextFormatFlags.NoPrefix 一致，
+        /// 否则 & 会被当作助记符导致测量偏窄、实际文字被省略号截断。</summary>
+        static int MeasureTextW(string text, Font f)
+        {
+            return TextRenderer.MeasureText(text, f, new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.NoPrefix | TextFormatFlags.Left | TextFormatFlags.SingleLine).Width;
+        }
+
+        /// <summary>一行：Label 左对齐 Gutter，控件紧跟标签右侧，可选尾部提示。返回控件 Left。</summary>
+        int PlaceRow(Control parent, int y, string labelText, Control ctl, Control trailing = null)
+        {
+            var lbl = new Label { Text = labelText, Left = Gutter, Top = y + (ctl.Height - lblHeight) / 2, AutoSize = true };
+            parent.Controls.Add(lbl);
+            int lblW = TextRenderer.MeasureText(labelText, Font).Width;
+            int ctlX = Gutter + lblW + 10;
+            ctl.Left = ctlX;
+            ctl.Top = y;
+            parent.Controls.Add(ctl);
+            if (trailing != null)
+            {
+                trailing.Left = ctl.Right + 8;
+                trailing.Top = y + (ctl.Height - trailing.Height) / 2 + 2;
+                parent.Controls.Add(trailing);
+            }
+            return ctlX;
+        }
+
+        static readonly int lblHeight = 16;
+
+        decimal ClampSize(int v) { return v < 9 ? 9 : v > 30 ? 30 : v; }
+
+        static string HexOf(Cfg c, string key)
         {
             switch (key)
             {
-                case "fg": return ColorTranslator.FromHtml(c.fg);
-                case "bg": return ColorTranslator.FromHtml(c.bg);
-                case "accent": return ColorTranslator.FromHtml(c.accent);
-                case "warn": return ColorTranslator.FromHtml(c.warn);
-                default: return ColorTranslator.FromHtml(c.bad);
+                case "fg": return c.fg;
+                case "bg": return c.bg;
+                case "accent": return c.accent;
+                case "warn": return c.warn;
+                default: return c.bad;
             }
         }
 
@@ -293,340 +334,95 @@ namespace HwWidget
             }
         }
 
-        static Color Hex(Color c) { return Color.FromArgb(c.R, c.G, c.B); }
-
-        void SaveAndClose()
+        void PickColor(string key, ColorBox b)
         {
-            cfg.language = langBox.SelectedIndex == 1 ? "en" : langBox.SelectedIndex == 2 ? "zh-TW" : "zh-CN";
-            cfg.host = string.IsNullOrEmpty(hostBox.Text.Trim()) ? "192.168.8.1" : hostBox.Text.Trim();
-            cfg.user = string.IsNullOrEmpty(userBox.Text.Trim()) ? "admin" : userBox.Text.Trim();
-            cfg.password = pwdBox.Text;
+            using (var dlg = new ColorDialog())
+            {
+                dlg.FullOpen = true;
+                dlg.Color = b.Value;
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                {
+                    b.Value = dlg.Color;
+                    string hex = "#" + dlg.Color.R.ToString("x2", CultureInfo.InvariantCulture)
+                                      + dlg.Color.G.ToString("x2", CultureInfo.InvariantCulture)
+                                      + dlg.Color.B.ToString("x2", CultureInfo.InvariantCulture);
+                    SetColor(cfg, key, hex);
+                }
+            }
+        }
+
+        // ================================================================ 值同步
+        /// <summary>把当前所有控件的值写回 cfg（重建前和保存前都要调用）。</summary>
+        void SyncToCfg()
+        {
+            cfg.host = string.IsNullOrEmpty(hostBox.TextValue.Trim()) ? "192.168.8.1" : hostBox.TextValue.Trim();
+            cfg.user = string.IsNullOrEmpty(userBox.TextValue.Trim()) ? "admin" : userBox.TextValue.Trim();
+            cfg.password = pwdBox.TextValue;
             cfg.interval = Math.Max(2.0, (double)ivlBox.Value);
             cfg.alpha = alphaBar.Value / 100.0;
             cfg.fontSize = (int)sizeBox.Value;
-            cfg.fontFam = string.IsNullOrEmpty(fontBox.SelectedItem) ? "Microsoft YaHei UI" : fontBox.SelectedItem;
+            var fam = fontBox.SelectedItem;
+            cfg.fontFam = string.IsNullOrEmpty(fam) ? "Microsoft YaHei UI" : fam;
             cfg.savePassword = savePwdBox.Checked;
             cfg.topmost = topBox.Checked;
             cfg.locked = lockBox.Checked;
             cfg.borderless = borderBox.Checked;
             cfg.showTitle = titleBox.Checked;
             foreach (var kv in rowBoxes) cfg.rows[kv.Key] = kv.Value.Checked;
+            foreach (var key in ColorKeys)
+                SetColor(cfg, key, "#" + colorBtns[key].Value.R.ToString("x2") + colorBtns[key].Value.G.ToString("x2") + colorBtns[key].Value.B.ToString("x2"));
+        }
+
+        /// <summary>把 cfg 替换成出厂默认（控件重建前调用）。</summary>
+        void ResetDefaults()
+        {
+            var d = new Cfg();
+            cfg.host = d.host; cfg.user = d.user; cfg.password = d.password;
+            cfg.interval = d.interval; cfg.alpha = d.alpha;
+            cfg.fontFam = d.fontFam; cfg.fontSize = d.fontSize;
+            cfg.fg = d.fg; cfg.bg = d.bg; cfg.accent = d.accent; cfg.warn = d.warn; cfg.bad = d.bad;
+            cfg.topmost = d.topmost; cfg.borderless = d.borderless; cfg.locked = d.locked;
+            cfg.showTitle = d.showTitle; cfg.savePassword = d.savePassword;
+            foreach (var kv in d.rows) cfg.rows[kv.Key] = kv.Value;
+            // language / posX / posY 不重置
+        }
+
+        void SaveAndClose()
+        {
+            SyncToCfg();
             cfg.Save();
             DialogResult = DialogResult.OK;
             Close();
         }
-    }
 
-    /// <summary>Qt Fusion 式下拉框：完全自绘。弹出层用页面内嵌覆盖面板（非独立窗口），
-    /// 尺寸严格等于控件宽，彻底避免顶层窗口尺寸被运行时改写的问题。</summary>
-    class FlatCombo : Panel
-    {
-        readonly string[] items;
-        int sel = -1;
-        bool scrollMode;                 // 条目过多时用原生滚动条，不再画假槽
-        readonly Panel host;
-        readonly QListView lb;
-        const int MaxPopH = 320;
-        Form hookedForm;
-        Control hookedPage;
-        MouseEventHandler dropHook;
-
-        public FlatCombo(string[] entries)
+        protected override void OnFormClosed(FormClosedEventArgs e)
         {
-            items = entries;
-            BackColor = Color.White;
-            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-            lb = new QListView();
-            lb.MouseUp += delegate
-            {
-                if (lb.SelectedIndex >= 0) { sel = lb.SelectedIndex; Invalidate(); }
-                CloseDrop();
-            };
-            host = new Panel { BackColor = Color.White, Visible = false };
-            host.Paint += delegate(object s, PaintEventArgs e)
-            {
-                using (var p = new Pen(Color.FromArgb(140, 151, 163)))
-                    e.Graphics.DrawRectangle(p, 0, 0, host.Width - 1, host.Height - 1);
-                if (scrollMode) return;      // 原生滚动条已占位，不重复画槽
-                // 右侧常驻滚动条槽：近白轨道 + 细浅灰圆角滑块
-                int sx = host.Width - 12;
-                using (var b = new SolidBrush(Color.FromArgb(251, 252, 253)))
-                    e.Graphics.FillRectangle(b, sx + 1, 1, 10, host.Height - 2);
-                using (var p = new Pen(Color.FromArgb(228, 231, 235)))
-                    e.Graphics.DrawLine(p, sx + 1, 1, sx + 1, host.Height - 2);
-                var thumb = new Rectangle(sx + 3, 3, 6, Math.Max(10, host.Height - 8));
-                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                using (var path = RoundedRect(thumb, 3))
-                using (var b = new SolidBrush(Color.FromArgb(201, 206, 212)))
-                    e.Graphics.FillPath(b, path);
-            };
-            host.Controls.Add(lb);
+            Application.RemoveMessageFilter(this);
+            base.OnFormClosed(e);
         }
 
-        static GraphicsPath RoundedRect(Rectangle r, int rad)
+        // 滚轮转发：光标位于 tab 内容区时，滚动当前页（子控件如复选框会吞掉滚轮消息，故用全局消息筛选）
+        public bool PreFilterMessage(ref Message m)
         {
-            int d = rad * 2;
-            var p = new GraphicsPath();
-            p.AddArc(r.X, r.Y, d, d, 180, 90);
-            p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-            p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-            p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-            p.CloseFigure();
-            return p;
-        }
-
-        public string SelectedItem
-        {
-            get { return sel < 0 ? "" : items[sel]; }
-            set
-            {
-                for (int i = 0; i < items.Length; i++) if (items[i] == value) { sel = i; break; }
-                Invalidate();
-            }
-        }
-
-        public int SelectedIndex
-        {
-            get { return sel; }
-            set { sel = value; Invalidate(); }
-        }
-
-        void CloseDrop()
-        {
-            host.Visible = false;
-            Invalidate();
-        }
-
-        protected override void OnMouseClick(MouseEventArgs e)
-        {
-            base.OnMouseClick(e);
-            if (host.Visible) { CloseDrop(); return; }
-            Control page = Parent;
-            if (page == null) return;
-            if (host.Parent == null) page.Controls.Add(host);
-            lb.Items.Clear();
-            lb.Items.AddRange(items);
-            lb.Highlight = SelectedItem;
-            int full = items.Length * lb.ItemHeight + 2;
-            // 弹层高度受页面可用空间限制：优先向下，空间不足则向上翻，仍不够则缩短+滚动
-            int below = page.ClientSize.Height - Bottom - 6;
-            int above = Top - 6;
-            int h, y;
-            if (full <= MaxPopH && full <= below) { h = full; y = Bottom; }
-            else if (below >= above) { h = Math.Min(Math.Min(below, MaxPopH), full); y = Bottom; }
-            else { h = Math.Min(Math.Min(above, MaxPopH), full); y = Top - h; }
-            scrollMode = full > h;
-            host.BringToFront();
-            host.SetBounds(Left, y, Width, h);
-            lb.SetBounds(1, 1, scrollMode ? Width - 2 : Width - 13, h - 2);
-            host.Visible = true;
-            Invalidate();
-            HookOutsideClick(page);
-        }
-
-        void HookOutsideClick(Control page)
-        {
-            if (dropHook == null)
-                dropHook = delegate(object s, MouseEventArgs me)
-                {
-                    if (!host.Visible) return;
-                    if (me.Button != MouseButtons.Left) return;
-                    Control src = s as Control;
-                    Point rel = src.PointToClient(me.Location);
-                    if (src == page)
-                    {
-                        if (!host.Bounds.Contains(rel)) CloseDrop();
-                        return;
-                    }
-                    // 点在其它控件上：相对页面坐标再判一次
-                    Point onPage = page.PointToClient(src.PointToScreen(me.Location));
-                    if (!host.Bounds.Contains(onPage)) CloseDrop();
-                };
-            Unhook();
-            hookedPage = page;
-            page.MouseDown += dropHook;
-            hookedForm = FindForm();
-            if (hookedForm != null) hookedForm.MouseDown += dropHook;
-        }
-
-        void Unhook()
-        {
-            if (dropHook == null) return;
-            if (hookedPage != null) hookedPage.MouseDown -= dropHook;
-            if (hookedForm != null) hookedForm.MouseDown -= dropHook;
-        }
-
-        protected override void OnHandleDestroyed(EventArgs e)
-        {
-            Unhook();
-            base.OnHandleDestroyed(e);
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            var g = e.Graphics;
-            using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, ClientRectangle);
-            // 展开时右侧按钮区浅蓝高亮（Qt Fusion 行为）
-            if (host.Visible)
-                using (var b = new SolidBrush(Color.FromArgb(205, 228, 247)))
-                    g.FillRectangle(b, Width - 28, 1, 27, Height - 2);
-            using (var p = new Pen(Color.FromArgb(224, 226, 229))) g.DrawRectangle(p, 0, 0, Width - 1, Height - 2);
-            using (var p = new Pen(Color.FromArgb(168, 172, 178))) g.DrawLine(p, 0, Height - 1, Width, Height - 1);
-            TextRenderer.DrawText(g, SelectedItem, Font, new Rectangle(6, 0, Width - 38, Height), Color.Black,
-                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            using (var p = new Pen(Color.FromArgb(70, 74, 80), 1.6f))
-            {
-                p.StartCap = LineCap.Round; p.EndCap = LineCap.Round;
-                float vx = Width - 19, vy = Height / 2f - 2f;
-                g.DrawLines(p, new[] { new PointF(vx - 5, vy), new PointF(vx, vy + 4.5f), new PointF(vx + 5, vy) });
-            }
+            const int WM_MOUSEWHEEL = 0x020a;
+            if (m.Msg != WM_MOUSEWHEEL) return false;
+            if (!IsHandleCreated || !Visible) return false;
+            Point screen = Control.MousePosition;
+            Point client = PointToClient(screen);
+            Rectangle body = tabs.ClientRectangle;
+            if (!body.Contains(client)) return false;
+            var page = tabs.SelectedPage;
+            if (page == null) return false;
+            int delta = unchecked((short)((long)m.WParam >> 16));   // 高 16 位为有符号滚轮增量
+            if (delta == 0) return false;
+            Point pos = page.AutoScrollPosition;
+            int ny = pos.Y + (delta > 0 ? 96 : -96);
+            page.AutoScrollPosition = new Point(pos.X, ny);
+            return true;
         }
     }
 
-    /// <summary>Qt Fusion 式下拉列表：当前值行浅蓝底+蓝框，其余白底黑字。</summary>
-    class QListView : ListBox
-    {
-        public string Highlight = "";
-        public QListView()
-        {
-            DrawMode = DrawMode.OwnerDrawFixed;
-            BorderStyle = BorderStyle.None;
-            ItemHeight = 28;
-            IntegralHeight = false;
-            HorizontalScrollbar = false;
-            BackColor = Color.White;
-        }
-        protected override void OnDrawItem(DrawItemEventArgs e)
-        {
-            if (e.Index < 0) return;
-            Graphics g = e.Graphics;
-            // ListBox 宽度已让开滚动条槽，选项铺满自身区域，不再重复缩进
-            Rectangle r = e.Bounds;
-            string text = Items[e.Index].ToString();
-            bool cur = text == Highlight;
-            if (cur)
-            {
-                using (var b = new SolidBrush(Color.FromArgb(197, 227, 246))) g.FillRectangle(b, r);
-                using (var p = new Pen(Color.FromArgb(74, 144, 217)))
-                    g.DrawRectangle(p, r.X + 1, r.Y + 1, r.Width - 3, r.Height - 3);
-            }
-            else using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, r);
-            TextRenderer.DrawText(g, text, Font,
-                new Rectangle(r.X + 8, r.Y, r.Width - 14, r.Height), Color.Black,
-                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-        }
-    }
-
-    /// <summary>Qt Fusion 式数字框：LineBox 同款描边，白底，右侧上下黑色小三角无按钮块。</summary>
-    class SpinBox : Panel
-    {
-        readonly TextBox tb;
-        decimal val, min, max, step = 1;
-        const int BtnW = 18;
-
-        public SpinBox()
-        {
-            BackColor = Color.White;
-            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-            tb = new TextBox { BorderStyle = BorderStyle.None, BackColor = Color.White };
-            tb.Leave += delegate { Commit(); };
-            tb.KeyDown += delegate(object s, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) Commit(); };
-            Controls.Add(tb);
-        }
-
-        public decimal Minimum { get { return min; } set { min = value; if (max == 0) max = min + 1; Clamp(); } }
-        public decimal Maximum { get { return max; } set { max = value; Clamp(); } }
-        public decimal Increment { get { return step; } set { step = value; } }
-        public decimal Value
-        {
-            get { return val; }
-            set { val = value; Clamp(); UpdateText(); }
-        }
-
-        void Clamp() { if (max > min) val = Math.Max(min, Math.Min(max, val)); }
-        void UpdateText() { tb.Text = val.ToString("0", CultureInfo.InvariantCulture); }
-        void Commit()
-        {
-            decimal v;
-            if (decimal.TryParse(tb.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { val = v; }
-            Clamp(); UpdateText(); Invalidate();
-        }
-
-        protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); tb.Focus(); }
-
-        protected override void OnMouseUp(MouseEventArgs e)
-        {
-            base.OnMouseUp(e);
-            if (e.Button != MouseButtons.Left || e.X < Width - BtnW) return;
-            if (e.Y < Height / 2) val += step; else val -= step;   // 上=加，下=减
-            Clamp(); UpdateText(); Invalidate();
-        }
-
-        protected override void OnMouseWheel(MouseEventArgs e)
-        {
-            base.OnMouseWheel(e);
-            val += e.Delta > 0 ? step : -step;
-            Clamp(); UpdateText(); Invalidate();
-        }
-
-        protected override void OnLayout(LayoutEventArgs e)
-        {
-            base.OnLayout(e);
-            tb.Left = 6;
-            tb.Top = (Height - tb.Height) / 2;
-            tb.Width = Width - BtnW - 12;
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            var g = e.Graphics;
-            using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, ClientRectangle);
-            int sep = Width - BtnW;
-            using (var b = new SolidBrush(Color.FromArgb(240, 242, 244)))
-                g.FillRectangle(b, sep + 1, 1, BtnW - 2, Height - 2);
-            using (var p = new Pen(Color.FromArgb(224, 226, 229))) g.DrawRectangle(p, 0, 0, Width - 1, Height - 2);
-            using (var p = new Pen(Color.FromArgb(168, 172, 178))) g.DrawLine(p, 0, Height - 1, Width, Height - 1);
-            using (var p = new Pen(Color.FromArgb(200, 203, 208)))
-            {
-                g.DrawLine(p, sep, 1, sep, Height - 2);                     // 编辑区/按钮区分隔
-                g.DrawLine(p, sep + 1, Height / 2, Width - 1, Height / 2);  // 上下按钮分隔
-            }
-            using (var b = new SolidBrush(Color.FromArgb(70, 74, 80)))
-            {
-                int ax = sep + BtnW / 2;
-                int uy = Height / 4, dy = Height - Height / 4;              // 上/下半区中心
-                g.FillPolygon(b, new Point[] { new Point(ax - 3, uy + 2), new Point(ax + 3, uy + 2), new Point(ax, uy - 2) });
-                g.FillPolygon(b, new Point[] { new Point(ax - 3, dy - 2), new Point(ax + 3, dy - 2), new Point(ax, dy + 2) });
-            }
-        }
-    }
-
-    /// <summary>自绘选项卡：选中页签涂白并与白色内容区连通。</summary>
-    class FlatTabControl : TabControl
-    {
-        protected override void WndProc(ref Message m)
-        {
-            base.WndProc(ref m);
-            if (m.Msg != 0x000F && m.Msg != 0x0317) return;   // WM_PAINT / WM_PRINTCLIENT
-            if (SelectedIndex < 0 || TabCount == 0) return;
-            Rectangle r;
-            try { r = GetTabRect(SelectedIndex); }
-            catch { return; }
-            if (r.Width <= 0) return;
-            Graphics g = m.Msg == 0x0317 ? Graphics.FromHdc(m.WParam) : CreateGraphics();
-            using (g)
-            {
-                var fill = new Rectangle(r.X - 1, r.Y, r.Width + 2, r.Height + 1);
-                using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, fill);
-                TextRenderer.DrawText(g, SelectedTab.Text, Font,
-                    new Rectangle(r.X, r.Y - 1, r.Width, r.Height), ForeColor,
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-            }
-        }
-    }
-
-    /// <summary>色块选择框：与 LineBox 同款描边，内部留白后填色。</summary>
+    /// <summary>色块按钮：白底 + 灰边框 + 内部填色，hover 蓝描边动画。点击弹 ColorDialog。</summary>
     class ColorBox : Control
     {
         Color value = Color.White;
@@ -637,34 +433,30 @@ namespace HwWidget
         }
         public ColorBox()
         {
-            BackColor = Color.White;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            Cursor = Cursors.Hand;
         }
+        protected override void OnMouseEnter(EventArgs e) { Anim.Set(this, "hover", 1); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { Anim.Set(this, "hover", 0); base.OnMouseLeave(e); }
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
-            using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, ClientRectangle);
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            double h = Anim.Get(this, "hover");
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
             using (var b = new SolidBrush(value))
-                g.FillRectangle(b, 3, 3, Width - 7, Height - 7);
-            using (var p = new Pen(Color.FromArgb(224, 226, 229))) g.DrawRectangle(p, 0, 0, Width - 1, Height - 2);
-            using (var p = new Pen(Color.FromArgb(168, 172, 178))) g.DrawLine(p, 0, Height - 1, Width, Height - 1);
-        }
-    }
-
-    /// <summary>Qt Fusion 式输入框容器：白底，极浅四边框 + 稍深底线。</summary>
-    class LineBox : Panel
-    {
-        public LineBox()
-        {
-            BackColor = Color.White;
-            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
-        }
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            var g = e.Graphics;
-            using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, ClientRectangle);
-            using (var p = new Pen(Color.FromArgb(224, 226, 229))) g.DrawRectangle(p, 0, 0, Width - 1, Height - 2);
-            using (var p = new Pen(Color.FromArgb(168, 172, 178))) g.DrawLine(p, 0, Height - 1, Width, Height - 1);
+            using (var path = Draw.Round(rect, 2))
+                g.FillPath(b, path);
+            using (var path = Draw.Round(rect, 2))
+            using (var p = new Pen(Draw.Lerp(Color.FromArgb(122, 122, 122), Pal.Accent, h)))
+                g.DrawPath(p, path);
+            if (h > 0.05)
+            {
+                var inner = new Rectangle(1, 1, Width - 3, Height - 3);
+                using (var path = Draw.Round(inner, 2))
+                using (var p = new Pen(Color.FromArgb((int)(h * 90), 0, 120, 212)))
+                    g.DrawPath(p, path);
+            }
         }
     }
 
@@ -675,6 +467,7 @@ namespace HwWidget
         {
             var n = new Cfg();
             n.host = c.host; n.user = c.user; n.password = c.password;
+            n.language = c.language;               // 必须拷贝，否则下拉框默认选中回退到 zh-CN
             n.interval = c.interval; n.alpha = c.alpha;
             n.fontFam = c.fontFam; n.fontSize = c.fontSize;
             n.fg = c.fg; n.bg = c.bg; n.accent = c.accent; n.warn = c.warn; n.bad = c.bad;

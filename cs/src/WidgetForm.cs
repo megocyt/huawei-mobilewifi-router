@@ -608,9 +608,6 @@ namespace HwWidget
                 if (!string.IsNullOrEmpty(h.mac)) meta.Append(h.mac);
                 if (!string.IsNullOrEmpty(h.brand)) meta.Append("  ").Append(h.brand);
                 if (!string.IsNullOrEmpty(h.band)) meta.Append("  ").Append(h.band);
-                if (h.active && (h.rateDown > 0 || h.rateUp > 0))
-                    meta.Append("  ↓").Append(Device.HumanRate(h.rateDown))
-                        .Append("  ↑").Append(Device.HumanRate(h.rateUp));
                 sb.AppendLine(meta.ToString());
                 shown++;
             }

@@ -48,8 +48,6 @@ namespace HwWidget
     {
         public string name = "", mac = "", ip = "", band = "", brand = "";
         public bool active;
-        public long rxKb, txKb, rateDown, rateUp;
-        public string mode = "";
     }
 
     public class SmsItem
@@ -498,30 +496,10 @@ namespace HwWidget
             }
         }
 
-        // ------------------------------------------------------------ 下挂终端与窗口均速
-        // 设备的每机字节计数器是“不规则批量刷新”的（可几十秒不动然后一次跳几十 MB），
-        // 相邻两次采样做分会长时间显示 0，所以取 60 秒窗口对累计值求均速。
-        readonly Dictionary<string, List<long[]>> win = new Dictionary<string, List<long[]>>();
-        const double WinSec = 60.0;
-
-        double WindowRate(string key, long kiloBytes, long nowMs)
-        {
-            List<long[]> pts;
-            if (!win.TryGetValue(key, out pts)) { pts = new List<long[]>(); win[key] = pts; }
-            pts.Add(new long[] { nowMs, kiloBytes });
-            while (pts.Count > 2 && (nowMs - pts[0][0]) / 1000.0 > WinSec) pts.RemoveAt(0);
-            double span = (pts[pts.Count - 1][0] - pts[0][0]) / 1000.0;
-            long delta = pts[pts.Count - 1][1] - pts[0][1];
-            if (span < 5.0 || delta < 0) return -1;
-            return delta * 1024.0 / span;
-        }
-
         void FillHosts(Snap s, Dictionary<string, object> d)
         {
             var arr = d == null ? null : d.ContainsKey("__list") ? d["__list"] as object[] : null;
             if (arr == null) return;
-            long now = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
-            var alive = new HashSet<string>();
             foreach (object o in arr)
             {
                 var h = o as Dictionary<string, object>;
@@ -535,34 +513,10 @@ namespace HwWidget
                 host.brand = Str(h, "DevBrands");
                 if (string.IsNullOrEmpty(host.brand)) host.brand = Str(h, "VendorClassID");
                 host.active = IsActive(h, "Active") || IsActive(h, "WlanActive");
-                host.rxKb = Lng(h, "RxKBytes");
-                host.txKb = Lng(h, "TxKBytes");
-                alive.Add(host.mac + "|rx");
-                alive.Add(host.mac + "|tx");
-                if (host.active)
-                {
-                    double rd = WindowRate(host.mac + "|rx", host.rxKb, now);
-                    double ru = WindowRate(host.mac + "|tx", host.txKb, now);
-                    if (rd > 0 || ru > 0)
-                    {
-                        host.rateDown = (long)Math.Max(0, rd);
-                        host.rateUp = (long)Math.Max(0, ru);
-                        host.mode = "win";
-                    }
-                    else
-                    {
-                        host.rateDown = Lng(h, "DownRate") * 1024;
-                        host.rateUp = Lng(h, "UpRate") * 1024;
-                        host.mode = "dev";
-                    }
-                }
                 s.hosts.Add(host);
                 s.hostsTotal++;
                 if (host.active) s.hostsActive++;
             }
-            var dead = new List<string>();
-            foreach (var k in win.Keys) if (!alive.Contains(k)) dead.Add(k);
-            foreach (var k in dead) win.Remove(k);
         }
 
         /// <summary>设备 JSON 返回的 Active / WlanActive 可能是 bool 型 true/false 或数字 1/0，

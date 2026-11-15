@@ -24,7 +24,7 @@ namespace HwWidget
         public string user = "admin";
         public string password = "";
         public string language = "zh-CN";                    // zh-CN | en | zh-TW
-        public double interval = 5.0;
+        public double interval = 3.0;
         public double alpha = 0.88;
         public string fontFam = "Microsoft YaHei UI";
         public int fontSize = 12;

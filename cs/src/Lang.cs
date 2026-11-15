@@ -125,6 +125,7 @@ namespace HwWidget
             { "lbl.interval", new[]{"刷新秒数", "Refresh interval (s)", "重新整理秒數"} },
             { "lbl.opacity",  new[]{"透明度", "Opacity", "透明度"} },
             { "lbl.fontsize", new[]{"字号", "Font size", "字級"} },
+            { "lbl.font",     new[]{"字体", "Font", "字體"} },
             { "lbl.language", new[]{"语言", "Language", "語言"} },
             { "chk.savepwd",  new[]{"把密码保存到本机配置文件（不勾则每次启动需重新输入）",
                                     "Save password to local config file (must re-enter on each start if unchecked)",

@@ -23,6 +23,7 @@ namespace HwWidget
         static readonly string[] ColorKeys = { "fg", "bg", "accent", "warn", "bad" };
 
         FlatCombo langBox;
+        FlatCombo fontBox;
         TextBox hostBox, userBox, pwdBox, panelBox;
 
         const int LX = 18, CX = 96;               // 标签列 / 控件列起点
@@ -157,6 +158,15 @@ namespace HwWidget
             Lbl(p, y, L.T("lbl.fontsize"));
             sizeBox = new SpinBox { Left = CX, Top = y, Width = 60, Height = 24, Minimum = 9, Maximum = 30, Increment = 1, Value = cfg.fontSize };
             p.Controls.Add(sizeBox);
+            y += 38;
+
+            Lbl(p, y, L.T("lbl.font"));
+            string[] fams = new string[FontFamily.Families.Length];
+            int fi = 0;
+            foreach (FontFamily ff in FontFamily.Families) fams[fi++] = ff.Name;
+            fontBox = new FlatCombo(fams) { Left = CX, Top = y, Width = 210, Height = 24 };
+            fontBox.SelectedItem = cfg.fontFam;
+            p.Controls.Add(fontBox);
             y += 48;
 
             p.Controls.Add(new Label { Text = L.T("grp.color"), Left = LX, Top = y, AutoSize = true, Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold) });
@@ -248,6 +258,7 @@ namespace HwWidget
             cfg.interval = Math.Max(2.0, (double)ivlBox.Value);
             cfg.alpha = alphaBar.Value / 100.0;
             cfg.fontSize = (int)sizeBox.Value;
+            cfg.fontFam = string.IsNullOrEmpty(fontBox.SelectedItem) ? "Microsoft YaHei UI" : fontBox.SelectedItem;
             cfg.savePassword = savePwdBox.Checked;
             cfg.topmost = topBox.Checked;
             cfg.locked = lockBox.Checked;
@@ -266,8 +277,10 @@ namespace HwWidget
     {
         readonly string[] items;
         int sel = -1;
+        bool scrollMode;                 // 条目过多时用原生滚动条，不再画假槽
         readonly Panel host;
         readonly QListView lb;
+        const int MaxPopH = 320;
         Form hookedForm;
         Control hookedPage;
         MouseEventHandler dropHook;
@@ -288,6 +301,7 @@ namespace HwWidget
             {
                 using (var p = new Pen(Color.FromArgb(140, 151, 163)))
                     e.Graphics.DrawRectangle(p, 0, 0, host.Width - 1, host.Height - 1);
+                if (scrollMode) return;      // 原生滚动条已占位，不重复画槽
                 // 右侧常驻滚动条槽：近白轨道 + 细浅灰圆角滑块
                 int sx = host.Width - 12;
                 using (var b = new SolidBrush(Color.FromArgb(251, 252, 253)))
@@ -347,10 +361,12 @@ namespace HwWidget
             lb.Items.Clear();
             lb.Items.AddRange(items);
             lb.Highlight = SelectedItem;
-            int h = items.Length * lb.ItemHeight + 2;
+            int full = items.Length * lb.ItemHeight + 2;
+            scrollMode = full > MaxPopH;
+            int h = scrollMode ? MaxPopH : full;
             host.BringToFront();
             host.SetBounds(Left, Bottom, Width, h);
-            lb.SetBounds(1, 1, Width - 13, h - 2);
+            lb.SetBounds(1, 1, scrollMode ? Width - 2 : Width - 13, h - 2);
             host.Visible = true;
             Invalidate();
             HookOutsideClick(page);

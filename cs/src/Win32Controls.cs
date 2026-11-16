@@ -117,16 +117,21 @@ namespace HwWidget
         public static readonly Color Accent = Color.FromArgb(0, 120, 212);
         public static readonly Color AccentDark = Color.FromArgb(0, 84, 153);
         public static readonly Color AccentLight = Color.FromArgb(229, 241, 251);
-        public static readonly Color BtnTop = Color.FromArgb(242, 242, 242);
-        public static readonly Color BtnBot = Color.FromArgb(216, 216, 216);
-        public static readonly Color BtnHoverTop = Color.FromArgb(232, 243, 252);
-        public static readonly Color BtnHoverBot = Color.FromArgb(204, 228, 247);
+        public static readonly Color CheckBlue = Color.FromArgb(0, 120, 215);   // Win10 复选框蓝
+        public static readonly Color SelBlue = Color.FromArgb(204, 232, 255);    // 下拉选中行浅蓝
+        public static readonly Color TitleBack = Color.FromArgb(240, 250, 247);  // 奶油色标题栏
+        public static readonly Color StripBack = Color.FromArgb(240, 240, 240);  // 顶层 tab 灰条
+        public static readonly Color WindowBorder = Color.FromArgb(218, 218, 218);
+        public static readonly Color BtnTop = Color.FromArgb(253, 253, 253);     // Snipaste 扁平白按钮
+        public static readonly Color BtnBot = Color.FromArgb(253, 253, 253);
+        public static readonly Color BtnHoverTop = Color.FromArgb(229, 241, 251);
+        public static readonly Color BtnHoverBot = Color.FromArgb(229, 241, 251);
         public static readonly Color BtnPressTop = Color.FromArgb(204, 228, 247);
-        public static readonly Color BtnPressBot = Color.FromArgb(153, 200, 235);
-        public static readonly Color BtnBorder = Color.FromArgb(173, 173, 173);
-        public static readonly Color EditBorder = Color.FromArgb(122, 122, 122);
-        public static readonly Color GroupBorder = Color.FromArgb(200, 200, 200);
-        public static readonly Color Text = Color.Black;
+        public static readonly Color BtnPressBot = Color.FromArgb(204, 228, 247);
+        public static readonly Color BtnBorder = Color.FromArgb(187, 187, 187);
+        public static readonly Color EditBorder = Color.FromArgb(160, 160, 160);
+        public static readonly Color GroupBorder = Color.FromArgb(214, 214, 214);
+        public static readonly Color Text = Color.FromArgb(32, 32, 32);   // 非纯黑，观感更柔和
         public static readonly Color TextGray = Color.Gray;
     }
 
@@ -231,7 +236,7 @@ namespace HwWidget
 
             int dy = pr > 0.5 ? 1 : 0;
             var textRect = new Rectangle(4 + 0, dy, Width - 8, Height);
-            Draw.Text(g, Text, Font, textRect, Pal.Text, ContentAlignment.MiddleCenter);
+            Draw.Text(g, Text, Font, textRect, Enabled ? Pal.Text : Pal.TextGray, ContentAlignment.MiddleCenter);
         }
     }
 
@@ -297,43 +302,30 @@ namespace HwWidget
             g.SmoothingMode = SmoothingMode.AntiAlias;
             double h = Anim.Get(this, "hover"), ck = Anim.Get(this, "check"), fo = Anim.Get(this, "focus");
 
-            int boxSize = 16;
+            int boxSize = 15;
             var box = new Rectangle(1, (Height - boxSize) / 2, boxSize - 1, boxSize - 1);
 
-            // 白底
+            // 白底（Win10 方角，非圆角）
             using (var b = new SolidBrush(Color.White))
-            using (var path = Draw.Round(box, 2))
-                g.FillPath(b, path);
+                g.FillRectangle(b, box);
 
             // 勾选时填蓝（check 动画控制 alpha 渐入）
             if (ck > 0.02)
             {
-                using (var b = new SolidBrush(Color.FromArgb((int)(255 * Math.Min(1, ck * 1.4)), Pal.Accent)))
-                using (var path = Draw.Round(box, 2))
-                    g.FillPath(b, path);
+                using (var b = new SolidBrush(Color.FromArgb((int)(255 * Math.Min(1, ck * 1.4)), Pal.CheckBlue)))
+                    g.FillRectangle(b, box);
             }
 
             // 边框
-            Color border = Draw.Lerp(Pal.EditBorder, Pal.Accent, h);
-            if (ck > 0.5) border = Pal.Accent;
-            using (var path = Draw.Round(box, 2))
+            Color border = ck > 0.5 ? Pal.CheckBlue : Draw.Lerp(Pal.EditBorder, Pal.AccentDark, h);
             using (var p = new Pen(border))
-                g.DrawPath(p, path);
-
-            // hover 内光
-            if (h > 0.05)
-            {
-                var inner = new Rectangle(box.X + 1, box.Y + 1, box.Width - 2, box.Height - 2);
-                using (var path = Draw.Round(inner, 1))
-                using (var p = new Pen(Color.FromArgb((int)(h * 40), 0, 120, 212)))
-                    g.DrawPath(p, path);
-            }
+                g.DrawRectangle(p, box);
 
             // 对勾：scale 弹入（overshoot）
             if (ck > 0.02)
             {
                 double t = Math.Min(1, ck * 1.25);
-                double scale = t < 1 ? 0.4 + 0.6 * EaseOutBack(t) : 1.0;
+                double scale = 1.0;   // 原生 Win10 对勾不做弹入缩放
                 float cx = box.X + box.Width / 2f, cy = box.Y + box.Height / 2f;
                 float s = box.Width / 16f * (float)scale;
                 PointF[] pts =
@@ -597,35 +589,19 @@ namespace HwWidget
 
             var rect = new Rectangle(0, 0, Width - 1, Height - 1);
             using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, rect);
-            // 凹陷阴影（用半透明 Pen 画顶/左边）
-            using (var p = new Pen(Color.FromArgb(40, 0, 0, 0)))
-            {
-                g.DrawLine(p, 1, 1, Width - 2, 1);
-                g.DrawLine(p, 1, 1, 1, Height - 2);
-            }
 
-            // 箭头按钮区
-            int arrowW = 18;
-            var arrowRect = new Rectangle(Width - arrowW, 1, arrowW - 1, Height - 2);
-            Draw.GradientV(g, arrowRect, Color.FromArgb(242, 242, 242), Color.FromArgb(216, 216, 216));
-            using (var p = new Pen(Color.FromArgb(196, 196, 196)))
-                g.DrawLine(p, Width - arrowW, 1, Width - arrowW, Height - 2);
-
-            // 边框
-            Color border = Draw.Lerp(Pal.EditBorder, Pal.Accent, Math.Max(h, Math.Max(f, o)));
+            // 边框（展开/聚焦变蓝，Snipaste 扁平无凹陷阴影）
+            Color border = Draw.Lerp(Pal.EditBorder, Pal.Accent, Math.Max(o, Math.Max(f, h * 0.4)));
             using (var p = new Pen(border)) g.DrawRectangle(p, rect);
 
             // 文字
             string txt = SelectedItem;
-            TextRenderer.DrawText(g, txt, Font, new Rectangle(6, 0, Width - arrowW - 10, Height), Pal.Text,
+            TextRenderer.DrawText(g, txt, Font, new Rectangle(6, 0, Width - 24, Height), Pal.Text,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
-            // 箭头（展开旋转）
-            g.TranslateTransform(Width - arrowW / 2 - 1, Height / 2f);
-            g.RotateTransform((float)(o * 180));
-            using (var b = new SolidBrush(Color.FromArgb(85, 85, 85)))
-                g.FillPolygon(b, new[] { new Point(-4, -2), new Point(4, -2), new Point(0, 3) });
-            g.ResetTransform();
+            // 下拉箭头 ▼（无独立渐变按钮区）
+            using (var b = new SolidBrush(Color.FromArgb(96, 96, 96)))
+                g.FillPolygon(b, new[] { new Point(Width - 15, Height / 2 - 2), new Point(Width - 7, Height / 2 - 2), new Point(Width - 11, Height / 2 + 3) });
         }
 
         protected override void OnMouseEnter(EventArgs e) { Anim.Set(this, "hover", 1); base.OnMouseEnter(e); }
@@ -754,7 +730,7 @@ namespace HwWidget
             {
                 var g = e.Graphics;
                 g.Clear(Color.White);
-                using (var p = new Pen(Pal.Accent))
+                using (var p = new Pen(Color.FromArgb(187, 187, 187)))
                     g.DrawRectangle(p, 0, 0, Width - 1, Height - 1);
                 int ih = ItemH;
                 for (int row = 0; row < VisibleRows; row++)
@@ -763,10 +739,13 @@ namespace HwWidget
                     if (i >= owner.Items.Count) break;
                     var r = new Rectangle(1, Pad + row * ih, ListW - 2, ih);
                     if (i == owner.SelectedIndex)
-                        using (var b = new SolidBrush(Pal.AccentLight)) g.FillRectangle(b, r);
+                    {
+                        using (var b = new SolidBrush(Pal.SelBlue)) g.FillRectangle(b, r);
+                        using (var p = new Pen(Pal.Accent)) g.DrawRectangle(p, r);
+                    }
                     else if (i == hoverIdx)
-                        using (var b = new SolidBrush(Pal.Accent)) g.FillRectangle(b, r);
-                    Color fc = (i == hoverIdx && i != owner.SelectedIndex) ? Color.White : Pal.Text;
+                        using (var b = new SolidBrush(Pal.AccentLight)) g.FillRectangle(b, r);
+                    Color fc = Pal.Text;
                     TextRenderer.DrawText(g, owner.Items[i], owner.Font, new Rectangle(r.X + 8, r.Y, r.Width - 12, r.Height), fc,
                         TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
                 }
@@ -794,6 +773,11 @@ namespace HwWidget
         int hoverIdx = -1;
         Timer slideTimer;
         double slideT;                    // 1 → 0，新页从右侧 8px 滑入
+        Font boldFont;
+
+        /// <summary>子 tab 模式：白底条 + 内容区带 1px 边框（Snipaste 嵌套子页）；
+        /// 顶层模式：灰底条 + 内容区无边框（由窗体边框收边）。</summary>
+        public bool Sub;
 
         public int SelectedIndex
         {
@@ -813,9 +797,16 @@ namespace HwWidget
         public WinTabControl()
         {
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.ContainerControl, true);
-            BackColor = SystemColors.Control;
+            BackColor = Color.White;
             TabStop = false;
         }
+
+        Font BoldFont()
+        {
+            if (boldFont == null || boldFont.Size != Font.Size) { if (boldFont != null) boldFont.Dispose(); boldFont = new Font(Font, FontStyle.Bold); }
+            return boldFont;
+        }
+        protected override void OnFontChanged(EventArgs e) { if (boldFont != null) { boldFont.Dispose(); boldFont = null; } Invalidate(); base.OnFontChanged(e); }
 
         /// <summary>清空 tab 页列表，供语言切换重建前调用。</summary>
         public void ResetPages()
@@ -846,16 +837,17 @@ namespace HwWidget
         /// <summary>当前选中的页面 Panel（供外部滚轮转发使用）。</summary>
         public Panel SelectedPage { get { return (sel >= 0 && sel < pages.Count) ? pages[sel] : null; } }
 
-        const int HeadH = 24;
+        int HeadH { get { return Sub ? 24 : 28; } }
         Rectangle TabRect(int i)
         {
-            int x = 4;
-            for (int k = 0; k < i; k++) x += TabWidth(k) + 1;
+            int x = Sub ? 6 : 8;
+            for (int k = 0; k < i; k++) x += TabWidth(k);
             return new Rectangle(x, 0, TabWidth(i), HeadH);
         }
+        // 统一用加粗字体量宽，选中加粗时不引起 tab 宽度跳动
         int TabWidth(int i)
         {
-            return TextRenderer.MeasureText(captions[i], Font).Width + 22;
+            return TextRenderer.MeasureText(captions[i], BoldFont()).Width + (Sub ? 20 : 26);
         }
 
         void StartSlide()
@@ -923,15 +915,21 @@ namespace HwWidget
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
-
-            // 内容区边框：与 tab 头对齐的完整矩形（底边必须为 Height-1，之前误用 Height-1 作高度导致底边画到控件外）
-            var body = new Rectangle(0, HeadH - 1, Width - 1, Height - HeadH);
+            g.SmoothingMode = SmoothingMode.None;   // 1px 直线保持锐利
+            int hh = HeadH;
             bool hasSel = sel >= 0 && sel < captions.Count;
             var activeTab = hasSel ? TabRect(sel) : Rectangle.Empty;
-            g.SmoothingMode = SmoothingMode.None;   // 1px 直线保持锐利对齐
-            using (var p = new Pen(Color.FromArgb(160, 160, 160)))
+            Color line = Sub ? Pal.GroupBorder : Pal.WindowBorder;
+            Color tabLine = Color.FromArgb(187, 187, 187);
+
+            // tab 条背景：顶层灰、子页白
+            using (var b = new SolidBrush(Sub ? Color.White : Pal.StripBack))
+                g.FillRectangle(b, 0, 0, Width, hh);
+
+            // 内容区顶边（选中 tab 处断开连通）；子页另画左/右/底边框
+            var body = new Rectangle(0, hh - 1, Width - 1, Height - hh);
+            using (var p = new Pen(line))
             {
-                // 顶边在选中 tab 处断开，让 tab 与内容区连通
                 if (hasSel)
                 {
                     g.DrawLine(p, body.X, body.Y, activeTab.X, body.Y);
@@ -939,33 +937,42 @@ namespace HwWidget
                 }
                 else
                     g.DrawLine(p, body.X, body.Y, body.Right, body.Y);
-                g.DrawLine(p, body.X, body.Y, body.X, body.Bottom);
-                g.DrawLine(p, body.X, body.Bottom, body.Right, body.Bottom);
-                g.DrawLine(p, body.Right, body.Y, body.Right, body.Bottom);
+                if (Sub)
+                {
+                    g.DrawLine(p, body.X, body.Y, body.X, body.Bottom);
+                    g.DrawLine(p, body.X, body.Bottom, body.Right, body.Bottom);
+                    g.DrawLine(p, body.Right, body.Y, body.Right, body.Bottom);
+                }
             }
 
-            g.SmoothingMode = SmoothingMode.AntiAlias;
             for (int i = 0; i < captions.Count; i++)
             {
                 var r = TabRect(i);
                 bool active = i == sel;
-                bool hoverI = i == hoverIdx && !active;
-                var face = active ? Color.White                                  : Draw.Lerp(Color.FromArgb(228, 228, 228), Color.FromArgb(245, 245, 245), Anim.Get(this, "h" + i));
-                using (var path = new GraphicsPath())
-                {
-                    path.AddArc(r.X, r.Bottom - 6, 6, 6, 90, 90);
-                    path.AddArc(r.X, r.Y, 6, 6, 180, 90);
-                    path.AddArc(r.Right - 6, r.Y, 6, 6, 270, 90);
-                    path.AddArc(r.Right - 6, r.Bottom - 6, 6, 6, 0, 90);
-                    using (var b = new SolidBrush(face)) g.FillPath(b, path);
-                    using (var p = new Pen(Color.FromArgb(160, 160, 160))) g.DrawPath(p, path);
-                }
                 if (active)
-                    using (var b = new SolidBrush(Color.White))
-                        g.FillRectangle(b, r.X + 1, r.Bottom - 1, r.Width - 2, 2);
-                TextRenderer.DrawText(g, captions[i], Font, new Rectangle(r.X, r.Y - (active ? 1 : 0), r.Width, r.Height),
-                    active ? Pal.Text : Color.FromArgb(68, 68, 68),
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+                {
+                    // 白色凸起块：顶/左/右描边，底边开口与内容连通；文字加粗
+                    var box = new Rectangle(r.X, 2, r.Width - 1, hh - 2);
+                    using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, box);
+                    using (var p = new Pen(tabLine))
+                    {
+                        g.DrawLine(p, box.X, box.Y, box.X, box.Bottom);
+                        g.DrawLine(p, box.X, box.Y, box.Right, box.Y);
+                        g.DrawLine(p, box.Right, box.Y, box.Right, box.Bottom);
+                    }
+                    TextRenderer.DrawText(g, captions[i], BoldFont(), new Rectangle(r.X, 1, r.Width, hh), Pal.Text,
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+                }
+                else
+                {
+                    // 未选中：灰条上的纯文字（无包围盒），hover 微亮
+                    double hv = Anim.Get(this, "h" + i);
+                    if (hv > 0.02)
+                        using (var b = new SolidBrush(Draw.Lerp(Sub ? Color.White : Pal.StripBack, Color.FromArgb(229, 229, 229), hv)))
+                            g.FillRectangle(b, r.X, 2, r.Width - 1, hh - 3);
+                    TextRenderer.DrawText(g, captions[i], Font, new Rectangle(r.X, 0, r.Width, hh), Color.FromArgb(68, 68, 68),
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+                }
             }
         }
     }
@@ -1142,8 +1149,10 @@ namespace HwWidget
             int sep = Width - BtnW;
             var upRect = new Rectangle(sep + 1, 1, BtnW - 2, Height / 2 - 1);
             var dnRect = new Rectangle(sep + 1, Height / 2, BtnW - 2, Height - Height / 2 - 2);
-            Draw.GradientV(g, upRect, up > 0.3 ? Color.FromArgb(189, 216, 241) : (h > 0.3 ? Pal.AccentLight : Color.FromArgb(242, 242, 242)), h > 0.3 ? Pal.AccentLight : Color.FromArgb(224, 224, 224));
-            Draw.GradientV(g, dnRect, dn > 0.3 ? Color.FromArgb(189, 216, 241) : (h > 0.3 ? Pal.AccentLight : Color.FromArgb(242, 242, 242)), h > 0.3 ? Pal.AccentLight : Color.FromArgb(224, 224, 224));
+            Color upFace = up > 0.3 ? Color.FromArgb(204, 228, 247) : (h > 0.3 ? Pal.AccentLight : Color.FromArgb(253, 253, 253));
+            Color dnFace = dn > 0.3 ? Color.FromArgb(204, 228, 247) : (h > 0.3 ? Pal.AccentLight : Color.FromArgb(253, 253, 253));
+            using (var b = new SolidBrush(upFace)) g.FillRectangle(b, upRect);
+            using (var b = new SolidBrush(dnFace)) g.FillRectangle(b, dnRect);
 
             Color border = Draw.Lerp(Pal.EditBorder, Pal.Accent, Math.Max(h, f));
             using (var p = new Pen(border)) g.DrawRectangle(p, rect);

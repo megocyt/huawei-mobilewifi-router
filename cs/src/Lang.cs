@@ -135,6 +135,7 @@ namespace HwWidget
             { "tab.conn",     new[]{"连接", "Connection", "連線", "接続", "Подключение", "연결"} },
             { "tab.look",     new[]{"外观", "Appearance", "外觀", "外観", "Внешний вид", "모양"} },
             { "tab.rows",     new[]{"显示内容", "Content", "顯示內容", "表示項目", "Содержимое", "표시 내용"} },
+            { "sub.general",  new[]{"常规", "General", "常規", "一般", "Общие", "일반"} },
             { "grp.device",   new[]{"设备连接", "Device connection", "裝置連線", "端末接続", "Подключение устройства", "장치 연결"} },
             { "grp.security", new[]{"安全", "Security", "安全性", "セキュリティ", "Безопасность", "보안"} },
             { "grp.font",     new[]{"字体", "Font", "字型", "フォント", "Шрифт", "글꼴"} },

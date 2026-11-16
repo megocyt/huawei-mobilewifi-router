@@ -1209,6 +1209,9 @@ namespace HwWidget
             instance = this;
             ContextMenuStrip = menu;
             tray.ContextMenuStrip = menu;
+            // WinForms 在首次显示时会按自身 CreateParams 重写扩展样式（不含 WS_EX_TRANSPARENT），
+            // 把 OnHandleCreated 里加的穿透位抹掉；延迟到消息循环空档再补应用一次，确保启动后持久生效。
+            BeginInvoke((MethodInvoker)ApplyClickThrough);
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)

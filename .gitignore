@@ -4,6 +4,8 @@ __pycache__/
 
 # C# 编译产物（可用 cs/build/build.ps1 一键重新生成，不入库）
 cs/build/*.exe
+# AssemblyInfo.cs 由 build.ps1 依据仓库根 VERSION 自动生成，属派产物
+cs/build/AssemblyInfo.cs
 cs/obj/
 cs/bin/
 

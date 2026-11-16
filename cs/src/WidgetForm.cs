@@ -1151,6 +1151,14 @@ namespace HwWidget
             var ct = Add(m, (cfg.clickThrough ? L.T("menu.clickoff") : L.T("menu.clickon")), "click"); ct.Tag = "click";
             m.Items.Add(new ToolStripSeparator());
             Add(m, L.T("menu.quit"), "quit");
+            // 底部版本页脚：灰色不可点，版本取自 Application.ProductVersion(=InformationalVersion)
+            m.Items.Add(new ToolStripSeparator());
+            var ver = new ToolStripMenuItem(L.T("menu.version") + "  " + Application.ProductVersion);
+            ver.AutoSize = false; ver.Height = 26; ver.Width = 176;
+            ver.TextAlign = ContentAlignment.MiddleLeft;
+            ver.Padding = new Padding(6, 4, 6, 4);
+            ver.Enabled = false;
+            m.Items.Add(ver);
             return m;
         }
 
@@ -1260,7 +1268,9 @@ namespace HwWidget
                 Math.Max(0, (e.Item.Height - e.TextFont.Height) / 2),
                 Math.Max(e.TextRectangle.Width, e.Item.Width),
                 e.TextFont.Height);
-            e.TextColor = e.Item.Selected ? Color.FromArgb(230, 237, 243) : Color.FromArgb(201, 209, 217);
+            e.TextColor = !e.Item.Enabled ? Color.FromArgb(139, 148, 158)
+                            : e.Item.Selected ? Color.FromArgb(230, 237, 243)
+                            : Color.FromArgb(201, 209, 217);
             base.OnRenderItemText(e);
         }
     }

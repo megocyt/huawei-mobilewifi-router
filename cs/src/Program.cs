@@ -7,6 +7,9 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
+// 程序集版本不在这里硬编码：改由 build.ps1 依据仓库根 VERSION 文件生成
+// cs/build/AssemblyInfo.cs 注入，保证 EXE 属性 / 托盘菜单显示 / README / git tag 同源。
+
 namespace HwWidget
 {
     static class Program

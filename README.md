@@ -2,6 +2,10 @@
 
 针对华为随身 WiFi（WebUI 管理页 192.168.8.1 类设备）的 Windows 桌面悬浮窗，实时展示网络状态、信号、速率、套餐流量、在线终端、电量等信息。
 
+![version](https://img.shields.io/badge/version-0.1.0-brightgreen)
+
+当前版本：`0.1.0`
+
 同一套设备协议提供两种实现，**共用同一份配置文件**，可互相接管：
 
 | | Python 版（`python/`） | C# 版（`cs/`） |
@@ -30,15 +34,15 @@ huawei/
 │   ├── hw_widget.pyw       #   悬浮窗入口（pythonw hw_widget.pyw）
 │   └── hw_status.py        #   设备协议库：SCRAM 登录 + 数据采集换算
 ├── cs/                     # C# 版
+│   ├── build.ps1           #   一键编译脚本（用系统自带 csc，产物输出到 build/）
 │   ├── src/                #   源码
 │   │   ├── Device.cs       #     设备协议客户端（SCRAM 登录 / 面板 / 采样）
 │   │   ├── Config.cs       #     配置读写（与 Python 版共用 config.json）
 │   │   ├── WidgetForm.cs   #     悬浮窗主界面（GDI+ 自绘）+ 托盘 + 采集线程
 │   │   ├── SettingsForm.cs #     暗色设置窗口
 │   │   └── Program.cs      #     入口：单实例互斥、DPI、托盘图标代码绘制
-│   └── build/              #   构建
-│       ├── build.ps1       #     一键编译（用系统自带 csc）
-│       └── HwWidget.exe    #     编译产物（不入库）
+│   └── build/              #   构建产物目录（不入库）
+│       └── HwWidget.exe    #     编译产物
 └── screenshots/            # 开发验证截图（不入库）
 ```
 
@@ -56,7 +60,7 @@ pythonw hw_widget.pyw        # 无控制台窗口运行；排错改用 python hw
 直接双击 `cs/build/HwWidget.exe`（仓库不收录二进制）。自行编译：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File cs/build/build.ps1
+powershell -ExecutionPolicy Bypass -File cs/build.ps1
 ```
 
 编译器为 Windows 自带的 `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`，无需安装任何 SDK 或运行时。
@@ -75,3 +79,17 @@ powershell -ExecutionPolicy Bypass -File cs/build/build.ps1
 - `POST /api/user/challenge_login` → `POST /api/user/authentication_login` 完成 SCRAM 登录
 - 状态类接口返回 XML（`monitoring/status`、`device/signal` 等），`system/HostInfo` 返回 JSON，统一解析
 - 每机速率对 60 秒窗口内的累计字节求均值（设备计数器为不规则批量刷新，瞬时差不可靠）
+
+## 版本与发布
+
+版本号单一真源为仓库根 `VERSION` 文件（形如 `0.1.0`）。执行 `build.ps1` 时会自动：
+
+- 依据 `VERSION` 生成 `cs/build/AssemblyInfo.cs`，把版本注入 EXE 文件属性（右键→属性→详细信息）；
+- 同步本 README 顶部的版本徽标与「当前版本」行；
+- 悬浮窗托盘菜单底部的「版本」页脚读取 `Application.ProductVersion`，与上述同源。
+
+**升版只改 `VERSION` 一处**，然后重新编译即可全流程联动。发布时打本地 git 标签：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File cs/build.ps1 -Tag   # 编译 + 创建 git tag v<版本>
+```

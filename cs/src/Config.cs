@@ -38,6 +38,7 @@ namespace HwWidget
         public bool borderless = true;
         public bool locked = false;
         public bool clickThrough = false;                       // 穿透模式：鼠标点击落到下层窗口
+        public bool autoStart = false;                          // 开机自启（写入 HKCU Run 注册表）
         public bool showTitle = true;
         public bool savePassword = true;
         public int posX = int.MinValue, posY = int.MinValue;
@@ -103,6 +104,7 @@ namespace HwWidget
             c.borderless = Bool(d, "borderless", c.borderless);
             c.locked = Bool(d, "locked", c.locked);
             c.clickThrough = Bool(d, "click_through", c.clickThrough);
+            c.autoStart = Bool(d, "auto_start", c.autoStart);
             c.showTitle = Bool(d, "show_title", c.showTitle);
             c.savePassword = Bool(d, "save_password", c.savePassword);
             object rowsObj;
@@ -160,6 +162,7 @@ namespace HwWidget
             sb.Append("},\n");
             PutBool(sb, "topmost", topmost); PutBool(sb, "borderless", borderless);
             PutBool(sb, "locked", locked); PutBool(sb, "click_through", clickThrough);
+            PutBool(sb, "auto_start", autoStart);
             PutBool(sb, "show_title", showTitle);
             PutBool(sb, "save_password", savePassword);
             if (posX == int.MinValue) sb.Append(" \"pos\": null\n");

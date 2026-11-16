@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
+using System.IO;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace HwWidget
 {
@@ -19,7 +21,7 @@ namespace HwWidget
         WinTrackBar alphaBar;
         Label alphaVal;
         WinComboBox langBox, fontBox;
-        WinCheckBox savePwdBox, topBox, lockBox, borderBox, titleBox;
+        WinCheckBox savePwdBox, topBox, lockBox, borderBox, titleBox, autoStartBox;
         readonly Dictionary<string, WinCheckBox> rowBoxes = new Dictionary<string, WinCheckBox>();
         readonly Dictionary<string, ColorBox> colorBtns = new Dictionary<string, ColorBox>();
         readonly Dictionary<string, Label> i18nLabels = new Dictionary<string, Label>();
@@ -33,7 +35,7 @@ namespace HwWidget
         const int RowH = 34;              // 表单行高（含间距）
         const int FirstY = 28;            // GroupBox 内首行 Y（标题下方留白）
         const int CtrlH = 24;             // 统一控件高度
-        const int PageH = 440;            // tab 内容高度（加高使外观页大多内容默认可见）
+        const int PageH = 486;            // tab 内容高度（加高以容纳外观页含开机自启行的全部内容，避免触发滚动）
         const int ScrollReserve = 22;     // 为垂直滚动条预留宽度，避免多余横向滚动条
         int GbW { get { return PageW - Gutter * 2 - ScrollReserve; } }   // GroupBox 统一宽度
 
@@ -182,7 +184,7 @@ namespace HwWidget
             y = gbColor.Bottom + 12;
 
             // 行为组
-            var gbBeh = new WinGroupBox { Caption = L.T("grp.behavior"), Left = Gutter, Top = y, Width = GbW, Height = FirstY + 30 * 2 + 10 };
+            var gbBeh = new WinGroupBox { Caption = L.T("grp.behavior"), Left = Gutter, Top = y, Width = GbW, Height = FirstY + 30 * 3 + 10 };
             int col2 = 16 + Math.Max(TextRenderer.MeasureText(L.T("chk.top"), Font).Width,
                                      TextRenderer.MeasureText(L.T("chk.lock"), Font).Width) + 34;
             topBox = MakeCheck(L.T("chk.top"), cfg.topmost);
@@ -193,10 +195,13 @@ namespace HwWidget
             lockBox.Left = 16; lockBox.Top = FirstY + 30;
             titleBox = MakeCheck(L.T("chk.title"), cfg.showTitle);
             titleBox.Left = col2; titleBox.Top = FirstY + 30;
+            autoStartBox = MakeCheck(L.T("chk.autostart"), IsAutoStartEnabled());
+            autoStartBox.Left = 16; autoStartBox.Top = FirstY + 60;
             gbBeh.Controls.Add(topBox);
             gbBeh.Controls.Add(borderBox);
             gbBeh.Controls.Add(lockBox);
             gbBeh.Controls.Add(titleBox);
+            gbBeh.Controls.Add(autoStartBox);
             p.Controls.Add(gbBeh);
         }
 
@@ -389,6 +394,7 @@ namespace HwWidget
             cfg.locked = lockBox.Checked;
             cfg.borderless = borderBox.Checked;
             cfg.showTitle = titleBox.Checked;
+            cfg.autoStart = autoStartBox.Checked;
             foreach (var kv in rowBoxes) cfg.rows[kv.Key] = kv.Value.Checked;
             foreach (var key in ColorKeys)
                 SetColor(cfg, key, "#" + colorBtns[key].Value.R.ToString("x2") + colorBtns[key].Value.G.ToString("x2") + colorBtns[key].Value.B.ToString("x2"));
@@ -412,8 +418,51 @@ namespace HwWidget
         {
             SyncToCfg();
             cfg.Save();
+            ApplyAutoStart(cfg.autoStart);
             DialogResult = DialogResult.OK;
             Close();
+        }
+
+        // ------------------------------------------------------------ 开机自启（HKCU Run 注册表）
+        const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+        const string RunValueName = "HwWidget";
+
+        /// <summary>注册表 Run 项是否指向当前 exe（路径归一化后比较，避免大小写/相对路径差异）。</summary>
+        static bool IsAutoStartEnabled()
+        {
+            try
+            {
+                using (var k = Registry.CurrentUser.OpenSubKey(RunKeyPath))
+                {
+                    if (k == null) return false;
+                    var v = k.GetValue(RunValueName) as string;
+                    if (string.IsNullOrEmpty(v)) return false;
+                    return NormalizePath(v) == NormalizePath(Application.ExecutablePath);
+                }
+            }
+            catch { return false; }
+        }
+
+        static string NormalizePath(string s)
+        {
+            s = s.Trim().Trim('"');
+            try { s = Path.GetFullPath(s); } catch { }
+            return s.TrimEnd('\\').ToLowerInvariant();
+        }
+
+        /// <summary>开启则写入 Run 项（路径加引号防空格），关闭则删除；失败静默忽略不影响其余设置。</summary>
+        static void ApplyAutoStart(bool on)
+        {
+            try
+            {
+                using (var k = Registry.CurrentUser.CreateSubKey(RunKeyPath))
+                {
+                    if (k == null) return;
+                    if (on) k.SetValue(RunValueName, "\"" + Application.ExecutablePath + "\"");
+                    else k.DeleteValue(RunValueName, false);
+                }
+            }
+            catch (Exception ex) { Cfg.LogError(ex); }
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)

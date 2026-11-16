@@ -151,6 +151,7 @@ namespace HwWidget
             { "chk.top",      new[]{"置顶显示", "Always on top", "最上層顯示", "最前面に表示", "Всегда поверху", "항상 위에"} },
             { "chk.lock",     new[]{"锁定位置", "Lock position", "鎖定位置", "位置を固定", "Закрепить позицию", "위치 잠금"} },
             { "chk.border",   new[]{"无边框样式", "Borderless", "無邊框樣式", "枠なし表示", "Без рамки", "테두리 없음"} },
+            { "chk.autostart", new[]{"开机自动启动", "Start with Windows", "開機自動啟動", "起動時に自動開始", "Запускать при загрузке Windows", "Windows 시작 시 자동 실행"} },
             { "chk.title",    new[]{"显示标题行", "Show title bar", "顯示標題列", "タイトルバーを表示", "Показать заголовок", "제목 표시줄 보기"} },
             { "btn.save",     new[]{"确定", "OK", "確定", "OK", "OK", "확인"} },
             { "btn.cancel",   new[]{"取消", "Cancel", "取消", "キャンセル", "Отмена", "취소"} },

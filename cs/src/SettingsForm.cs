@@ -27,7 +27,7 @@ namespace HwWidget
         WinTrackBar alphaBar;
         Label alphaVal;
         WinComboBox langBox, fontBox;
-        WinCheckBox savePwdBox, topBox, lockBox, borderBox, titleBox, autoStartBox;
+        WinCheckBox savePwdBox, topBox, lockBox, borderBox, titleBox, autoStartBox, ctBorderBox;
         readonly Dictionary<string, WinCheckBox> rowBoxes = new Dictionary<string, WinCheckBox>();
         readonly Dictionary<string, ColorBox> colorBtns = new Dictionary<string, ColorBox>();
         static readonly string[] ColorKeys = { "fg", "bg", "accent", "warn", "bad" };
@@ -178,8 +178,9 @@ namespace HwWidget
             topBox = MakeCheck(L.T("chk.top"), cfg.topmost); topBox.Left = 16; topBox.Top = y; y += 26;
             borderBox = MakeCheck(L.T("chk.border"), cfg.borderless); borderBox.Left = 16; borderBox.Top = y; y += 26;
             lockBox = MakeCheck(L.T("chk.lock"), cfg.locked); lockBox.Left = 16; lockBox.Top = y; y += 26;
-            titleBox = MakeCheck(L.T("chk.title"), cfg.showTitle); titleBox.Left = 16; titleBox.Top = y;
-            g3.Controls.Add(topBox); g3.Controls.Add(borderBox); g3.Controls.Add(lockBox); g3.Controls.Add(titleBox);
+            titleBox = MakeCheck(L.T("chk.title"), cfg.showTitle); titleBox.Left = 16; titleBox.Top = y; y += 26;
+            ctBorderBox = MakeCheck(L.T("chk.ctborder"), cfg.clickThroughBorder); ctBorderBox.Left = 16; ctBorderBox.Top = y;
+            g3.Controls.Add(topBox); g3.Controls.Add(borderBox); g3.Controls.Add(lockBox); g3.Controls.Add(titleBox); g3.Controls.Add(ctBorderBox);
             AddInnerReset(g3, subViewH, 2);
 
             lookSub.SelectedIndex = 0;
@@ -382,6 +383,7 @@ namespace HwWidget
             cfg.locked = lockBox.Checked;
             cfg.borderless = borderBox.Checked;
             cfg.showTitle = titleBox.Checked;
+            cfg.clickThroughBorder = ctBorderBox.Checked;
             cfg.autoStart = autoStartBox.Checked;
             foreach (var kv in rowBoxes) cfg.rows[kv.Key] = kv.Value.Checked;
             foreach (var key in ColorKeys)
@@ -397,6 +399,7 @@ namespace HwWidget
             cfg.fg = d.fg; cfg.bg = d.bg; cfg.accent = d.accent; cfg.warn = d.warn; cfg.bad = d.bad;
             cfg.topmost = d.topmost; cfg.borderless = d.borderless; cfg.locked = d.locked;
             cfg.showTitle = d.showTitle; cfg.savePassword = d.savePassword;
+            cfg.clickThroughBorder = d.clickThroughBorder;
             foreach (var kv in d.rows) cfg.rows[kv.Key] = kv.Value;
         }
 
@@ -406,7 +409,7 @@ namespace HwWidget
             var d = new Cfg();
             if (which == 0) { cfg.fontSize = d.fontSize; cfg.fontFam = d.fontFam; cfg.alpha = d.alpha; }
             else if (which == 1) { cfg.fg = d.fg; cfg.bg = d.bg; cfg.accent = d.accent; cfg.warn = d.warn; cfg.bad = d.bad; }
-            else { cfg.topmost = d.topmost; cfg.borderless = d.borderless; cfg.locked = d.locked; cfg.showTitle = d.showTitle; }
+            else { cfg.topmost = d.topmost; cfg.borderless = d.borderless; cfg.locked = d.locked; cfg.showTitle = d.showTitle; cfg.clickThroughBorder = d.clickThroughBorder; }
         }
 
         void SaveAndClose()
@@ -677,6 +680,7 @@ namespace HwWidget
             n.fg = c.fg; n.bg = c.bg; n.accent = c.accent; n.warn = c.warn; n.bad = c.bad;
             foreach (var kv in c.rows) n.rows[kv.Key] = kv.Value;
             n.topmost = c.topmost; n.borderless = c.borderless; n.locked = c.locked;
+            n.clickThrough = c.clickThrough; n.clickThroughBorder = c.clickThroughBorder;
             n.showTitle = c.showTitle; n.savePassword = c.savePassword;
             n.posX = c.posX; n.posY = c.posY;
             return n;

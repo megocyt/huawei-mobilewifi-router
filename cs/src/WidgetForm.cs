@@ -455,11 +455,11 @@ namespace HwWidget
             Color accent = Col("accent");
             Color line = Blend(bg, Color.White, 0.14f);
             // 不再绘制顶部主色光带与整圈描边（用户不想要顶部那条线）；圆角由 Region 裁剪保证
-            if (cfg.clickThrough)
+            if (cfg.clickThrough && cfg.clickThroughBorder)
             {
-                // 穿透模式虚线描边：语言无关地提示当前窗口对鼠标“惰性可穿透”
+                // 穿透模式虚线描边（设置可关）：语言无关地提示当前窗口对鼠标“惰性可穿透”
                 using (var p = Round(new Rectangle(rc.X + 2, rc.Y + 2, rc.Width - 4, rc.Height - 4), Rad))
-                using (var pen = new Pen(Blend(bg, Col("warn"), 0.92f), 2))
+                using (var pen = new Pen(Blend(bg, Color.White, 0.22f), 2))   // 贴近背景的微提亮灰，低调提示不抢眼
                 {
                     pen.DashStyle = DashStyle.Dash;
                     g.DrawPath(pen, p);

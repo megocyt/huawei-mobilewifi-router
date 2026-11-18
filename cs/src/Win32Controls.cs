@@ -122,7 +122,7 @@ namespace HwWidget
         public static readonly Color TitleBack = Color.FromArgb(240, 250, 247);  // 奶油色标题栏
         public static readonly Color StripBack = Color.FromArgb(240, 240, 240);  // 顶层 tab 灰条
         public static readonly Color WindowBorder = Color.FromArgb(218, 218, 218);
-        public static readonly Color BtnTop = Color.FromArgb(253, 253, 253);     // Snipaste 扁平白按钮
+        public static readonly Color BtnTop = Color.FromArgb(253, 253, 253);     // 扁平白按钮
         public static readonly Color BtnBot = Color.FromArgb(253, 253, 253);
         public static readonly Color BtnHoverTop = Color.FromArgb(229, 241, 251);
         public static readonly Color BtnHoverBot = Color.FromArgb(229, 241, 251);
@@ -590,7 +590,7 @@ namespace HwWidget
             var rect = new Rectangle(0, 0, Width - 1, Height - 1);
             using (var b = new SolidBrush(Color.White)) g.FillRectangle(b, rect);
 
-            // 边框（展开/聚焦变蓝，Snipaste 扁平无凹陷阴影）
+            // 边框（展开/聚焦变蓝，扁平无凹陷阴影）
             Color border = Draw.Lerp(Pal.EditBorder, Pal.Accent, Math.Max(o, Math.Max(f, h * 0.4)));
             using (var p = new Pen(border)) g.DrawRectangle(p, rect);
 
@@ -775,7 +775,7 @@ namespace HwWidget
         double slideT;                    // 1 → 0，新页从右侧 8px 滑入
         Font boldFont;
 
-        /// <summary>子 tab 模式：白底条 + 内容区带 1px 边框（Snipaste 嵌套子页）；
+        /// <summary>子 tab 模式：白底条 + 内容区带 1px 边框（嵌套子页）；
         /// 顶层模式：灰底条 + 内容区无边框（由窗体边框收边）。</summary>
         public bool Sub;
 

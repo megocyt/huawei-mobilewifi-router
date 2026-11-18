@@ -10,7 +10,7 @@ using Microsoft.Win32;
 
 namespace HwWidget
 {
-    /// <summary>设置窗口：完全仿 Snipaste 首选项的经典 Win32 浅色风格。
+    /// <summary>设置窗口：经典 Win32 浅色风格。
     /// 奶油色自绘标题栏 + 灰底顶层 tab（选中白凸加粗）+ 白内容区 + 嵌套子 tab（带边框面板）
     /// + 方角 Win10 蓝复选框 + 扁平白按钮/下拉 + GroupBox 割入标题 + 底栏 (?)/恢复默认/取消/确定。
     /// 切换语言时先把当前控件值同步进 cfg，再用新语言重建整个界面。</summary>
@@ -35,7 +35,7 @@ namespace HwWidget
         WinButton resetBtn, cancelBtn, okBtn;
         WinHelpButton helpBtn;
 
-        const int WinW = 520;             // 窗宽（Snipaste 同宽）
+        const int WinW = 520;             // 窗宽
         const int WinH = 440;             // 窗高
         const int TitleH = 32;            // 自绘标题栏高
         const int FooterH = 46;           // 底栏高
@@ -96,7 +96,7 @@ namespace HwWidget
             tabs.SelectedIndex = 0;
         }
 
-        /// <summary>连接页（仿 Snipaste 常规）：语言 + 开机自启 + 设备连接组 + 安全组。</summary>
+        /// <summary>连接页（常规布局）：语言 + 开机自启 + 设备连接组 + 安全组。</summary>
         void BuildConnPage(Panel p)
         {
             int y = 14;
@@ -480,7 +480,7 @@ namespace HwWidget
         // ---------------------------------------------------------------- DWM 圆角 + 阴影 + 玻璃边
         // 保留 WS_THICKFRAME 让 DWM 视本窗为“带框架”窗口（从而自动圆角/投影/玻璃描边），
         // 再用 WM_NCCALCSIZE 把非客户区压成 0（客户区=整窗）以便自绘标题栏；
-        // WM_NCHITTEST 恒返 HTCLIENT 禁掉边缘 resize。Snipaste 同理。
+        // WM_NCHITTEST 恒返 HTCLIENT 禁掉边缘 resize。
         protected override CreateParams CreateParams
         {
             get

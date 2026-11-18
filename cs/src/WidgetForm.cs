@@ -129,7 +129,6 @@ namespace HwWidget
         {
             // 语言实时切换（未保存预览）：重建行（刷新标签文字）并重算标签列宽，避免长译文截断
             if (appliedLang != L.Lang) { Relayout(); return; }
-            if (snap == null) return;
             string now = DateTime.Now.ToString("HH:mm:ss");
             foreach (var r in rows)
             {
@@ -281,92 +280,101 @@ namespace HwWidget
         {
             var outRows = new List<Row>();
             Snap s = snap;
-            if (s == null)
-            {
-                outRows.Add(new Row { key = "conn", label = L.T("lbl.status"), value = L.T("v.fail"), color = Col("bad") });
-                outRows.Add(new Row { key = "err", label = L.T("lbl.detail"), value = Trunc(err, 34), color = Col("fg") });
-                return outRows;
-            }
-            if (!string.IsNullOrEmpty(err))
-                outRows.Add(new Row { key = "err", label = L.T("lbl.status"), value = "⚠ " + Trunc(err, 28), color = Col("bad") });
-
+            // 失败时 Sample() 返回 ok=false 的零值快照（非 null），故以 ok 判定“是否取到数据”；
+            // 行集合只由配置决定：缺数据/请求失败时用 "-" 占位而不删行，
+            // 且 Plan/Battery/Signal 的 kind 恒定（进度条额外高度不变），窗口高度不随采样成败闪动。
+            bool has = s != null && s.ok;
             if (On("conn"))
-                outRows.Add(new Row
-                {
-                    key = "conn", label = L.T("lbl.network"),
-                    value = ((s.net ?? "-") + " " + L.Carrier(s.carrier)).Trim(),
-                    color = Col(s.connected ? "accent" : "bad")
-                });
-            if (On("model") && !string.IsNullOrEmpty(s.model) && s.model != "-")
-                outRows.Add(new Row { key = "model", label = L.T("lbl.model"), value = s.model, color = Col("fg") });
+            {
+                string v; Color c;
+                if (!has) { v = string.IsNullOrEmpty(err) ? L.T("v.fail") : Trunc(err, 30); c = Col("bad"); }
+                else { v = ((s.net ?? "-") + " " + L.Carrier(s.carrier)).Trim(); c = Col(s.connected ? "accent" : "bad"); }
+                outRows.Add(new Row { key = "conn", label = L.T("lbl.network"), value = v, color = c });
+            }
+            if (On("model"))
+                outRows.Add(new Row { key = "model", label = L.T("lbl.model"), value = Ph(has ? s.model : null), color = Col("fg") });
             if (On("signal"))
             {
-                string v = s.rsrp + " dBm · SINR " + s.sinr;
-                string lvl = s.rsrpLevel;
+                string rsrp = Ph(has ? s.rsrp : null), sinr = Ph(has ? s.sinr : null);
+                string v = (rsrp == "-" && sinr == "-") ? "-" : rsrp + " dBm · SINR " + sinr;
+                string lvl = has ? s.rsrpLevel : "-";
                 outRows.Add(new Row
                 {
                     key = "signal", label = L.T("lbl.signal"), value = v, kind = Kind.Signal,
-                    bars = s.sigBars, barMax = Math.Max(1, s.sigMax),
-                    color = Col(lvl == "优" || lvl == "良" ? "accent" : lvl == "中" ? "warn" : "bad")
+                    bars = has ? s.sigBars : 0, barMax = Math.Max(1, has ? s.sigMax : 5),
+                    color = Col(lvl == "优" || lvl == "良" ? "accent" : lvl == "中" ? "warn" : lvl == "-" ? "fg" : "bad")
                 });
             }
             if (On("rate"))
                 outRows.Add(new Row
                 {
                     key = "rate", label = L.T("lbl.rate"),
-                    value = "↓" + Device.HumanRate(s.rateDown).Replace(" ", "") + "  ↑" + Device.HumanRate(s.rateUp).Replace(" ", ""),
+                    value = has ? "↓" + Device.HumanRate(s.rateDown).Replace(" ", "") + "  ↑" + Device.HumanRate(s.rateUp).Replace(" ", "") : "-",
                     color = Col("fg"), mono = true
                 });
-            if (On("plan") && s.planLimit > 0)
+            if (On("plan"))
             {
-                string u = Device.HumanBytes(s.planUsed, 1).Replace(" ", "");
-                string lim = (s.planLimitRaw ?? "").Replace(" ", "");
-                string v = TailUnit(u) == TailUnit(lim) ? NumPart(u) + "/" + lim : u + "/" + lim;
-                if (s.planDaysLeft >= 0) v += " " + string.Format(L.T("fmt.daysleft"), s.planDaysLeft);
-                outRows.Add(new Row
+                // 始终保留 Plan 行（含进度条额外高度）；无套餐/未取到时占位，避免高度跳变
+                bool ok = has && s.planLimit > 0;
+                string v = "-", tail = "-"; double frac = 0; Color c = Col("fg");
+                if (ok)
                 {
-                    key = "plan", label = L.T("lbl.plan"), value = v, kind = Kind.Plan,
-                    frac = Math.Max(0, Math.Min(100, s.planPercent)) / 100.0,
-                    color = Col(s.planOverLimit ? "bad" : s.planOverThreshold ? "warn" : "accent"),
-                    tail = s.planPercent.ToString("0.#", CultureInfo.InvariantCulture) + "%"
-                });
+                    string u = Device.HumanBytes(s.planUsed, 1).Replace(" ", "");
+                    string lim = (s.planLimitRaw ?? "").Replace(" ", "");
+                    v = TailUnit(u) == TailUnit(lim) ? NumPart(u) + "/" + lim : u + "/" + lim;
+                    if (s.planDaysLeft >= 0) v += " " + string.Format(L.T("fmt.daysleft"), s.planDaysLeft);
+                    frac = Math.Max(0, Math.Min(100, s.planPercent)) / 100.0;
+                    tail = s.planPercent.ToString("0.#", CultureInfo.InvariantCulture) + "%";
+                    c = Col(s.planOverLimit ? "bad" : s.planOverThreshold ? "warn" : "accent");
+                }
+                outRows.Add(new Row { key = "plan", label = L.T("lbl.plan"), value = v, kind = Kind.Plan, frac = frac, color = c, tail = tail });
             }
             if (On("traffic"))
                 outRows.Add(new Row
                 {
                     key = "traffic", label = L.T("lbl.traffic"),
-                    value = L.T("v.today") + " " + Device.HumanBytes(s.dayUsed, 1).Replace(" ", "") + " · " + L.T("v.month") + " " + Device.HumanBytes(s.monthDown + s.monthUp, 1).Replace(" ", ""),
+                    value = has ? L.T("v.today") + " " + Device.HumanBytes(s.dayUsed, 1).Replace(" ", "") + " · " + L.T("v.month") + " " + Device.HumanBytes(s.monthDown + s.monthUp, 1).Replace(" ", "") : "-",
                     color = Col("fg")
                 });
             if (On("hosts"))
-                outRows.Add(new Row { key = "hosts", label = L.T("lbl.hosts"), value = s.hostsActive + " / " + s.hostsTotal, color = Col("fg"), mono = true });
-            if (On("battery") && s.battery != "-")
+                outRows.Add(new Row { key = "hosts", label = L.T("lbl.hosts"), value = has ? s.hostsActive + " / " + s.hostsTotal : "-", color = Col("fg"), mono = true });
+            if (On("battery"))
             {
-                double pct;
-                double.TryParse(s.battery.TrimEnd('%'), out pct);
-                bool low = pct <= 20 && !s.charging;
+                bool ok = has && !string.IsNullOrEmpty(s.battery) && s.battery != "-";
+                double pct = 0;
+                if (ok) double.TryParse(s.battery.TrimEnd('%'), out pct);
+                bool low = ok && pct <= 20 && !s.charging;
                 outRows.Add(new Row
                 {
-                    key = "battery", label = L.T("lbl.battery"), value = s.battery + (s.charging ? " " + L.T("v.charging") : ""),
-                    kind = Kind.Battery, frac = pct / 100.0, color = Col(low ? "warn" : "accent"), charging = s.charging
+                    key = "battery", label = L.T("lbl.battery"),
+                    value = ok ? s.battery + (s.charging ? " " + L.T("v.charging") : "") : "-",
+                    kind = Kind.Battery, frac = pct / 100.0, color = Col(low ? "warn" : ok ? "accent" : "fg"), charging = ok && s.charging
                 });
             }
-            if (On("msisdn") && !string.IsNullOrEmpty(s.msisdn) && s.msisdn != "-")
-                outRows.Add(new Row { key = "msisdn", label = L.T("lbl.num"), value = msisdnRevealed ? s.msisdn : MaskPhone(s.msisdn), color = Col("fg"), mono = true, eye = true });
+            if (On("msisdn"))
+            {
+                bool ok = has && !string.IsNullOrEmpty(s.msisdn) && s.msisdn != "-";
+                outRows.Add(new Row { key = "msisdn", label = L.T("lbl.num"), value = ok ? (msisdnRevealed ? s.msisdn : MaskPhone(s.msisdn)) : "-", color = Col("fg"), mono = true, eye = ok });
+            }
             if (On("ip"))
             {
                 outRows.Add(new Row { key = "ip", label = L.T("lbl.local"), value = LocalIp(cfg.host), color = Col("fg"), mono = true });
-                outRows.Add(new Row { key = "ip2", label = L.T("lbl.wan"), value = s.wanIp, color = Col("fg"), mono = true });
-                if (!string.IsNullOrEmpty(s.wanIpv6) && s.wanIpv6 != "-")
-                    outRows.Add(new Row { key = "ip6", label = L.T("lbl.v6"), value = s.wanIpv6, color = Col("fg"), mono = true });
+                outRows.Add(new Row { key = "ip2", label = L.T("lbl.wan"), value = Ph(has ? s.wanIp : null), color = Col("fg"), mono = true });
+                outRows.Add(new Row { key = "ip6", label = L.T("lbl.v6"), value = Ph(has ? s.wanIpv6 : null), color = Col("fg"), mono = true });
             }
-            if (On("uptime") && s.uptime > 0)
-                outRows.Add(new Row { key = "uptime", label = L.T("lbl.uptime"), value = Device.HumanDur(s.uptime), color = Col("fg") });
-            if (On("sms") && s.smsUnread > 0)
-                outRows.Add(new Row { key = "sms", label = L.T("lbl.sms"), value = string.Format(L.T("fmt.smsunread"), s.smsUnread), color = Col("warn") });
+            if (On("uptime"))
+                outRows.Add(new Row { key = "uptime", label = L.T("lbl.uptime"), value = (has && s.uptime > 0) ? Device.HumanDur(s.uptime) : "-", color = Col("fg") });
+            if (On("sms"))
+                outRows.Add(new Row { key = "sms", label = L.T("lbl.sms"), value = has ? string.Format(L.T("fmt.smsunread"), s.smsUnread) : "-", color = Col(has && s.smsUnread > 0 ? "warn" : "fg") });
             if (On("clock"))
                 outRows.Add(new Row { key = "clock", label = L.T("lbl.clock"), value = DateTime.Now.ToString("HH:mm:ss"), color = Col("fg"), mono = true });
             return outRows;
+        }
+
+        /// <summary>缺失字段统一占位 "-"（null / 空 / 设备回 "-" 均视为未取到）。</summary>
+        static string Ph(string v)
+        {
+            return string.IsNullOrEmpty(v) || v == "-" ? "-" : v;
         }
 
         bool On(string key)

@@ -231,6 +231,7 @@ namespace HwWidget
         Dictionary<string, object> Get(string path)
         {
             var r = Request(path + (path.IndexOf('?') >= 0 ? "&" : "?") + "_ResponseSource=Broswer", null, false);
+            if (r.status < 0) lastNetErr = r.body;   // 传输层失败（拒绝/超时/DNS），body 即异常消息
             var d = ParseAny(r.body);
             string code = Str(d, "code");
             if (!string.IsNullOrEmpty(code))
@@ -531,6 +532,7 @@ namespace HwWidget
         }
 
         public string errText = "";
+        string lastNetErr = "";
         public int WaitSeconds
         {
             get
@@ -597,6 +599,7 @@ namespace HwWidget
         {
             var s = new Snap();
             s.ts = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
+            lastNetErr = "";
             if (!Login(false))
             {
                 s.loggedIn = false;
@@ -608,7 +611,14 @@ namespace HwWidget
             var signal = Get("/api/device/signal");
             var hosts = Get("/api/system/HostInfo");
             FillCore(s, status, traffic, signal);
-            if (s.err.Length == 0) s.ok = true;
+            // 登录态有缓存：断网时 Login 仍返回 true，核心接口全空代表传输层失败，
+            // 零值不是真实数据，必须标 ok=false 让界面走占位分支
+            if ((status == null || status.Count == 0) && (traffic == null || traffic.Count == 0) && (signal == null || signal.Count == 0))
+            {
+                s.ok = false;
+                if (s.err.Length == 0) s.err = lastNetErr.Length > 0 ? lastNetErr : L.T("err.net");
+            }
+            else if (s.err.Length == 0) s.ok = true;
             FillHosts(s, hosts);
             var plmn = Get("/api/net/current-plmn");
             s.carrier = Str(plmn, "ShortName");

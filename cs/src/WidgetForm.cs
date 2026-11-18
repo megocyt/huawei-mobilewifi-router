@@ -31,6 +31,8 @@ namespace HwWidget
         ContextMenuStrip menu;
         System.Windows.Forms.Timer clockTimer, hintTimer, saveTimer, trayClickTimer;
         SettingsForm settingsForm;
+        SmsForm smsForm;
+        Point smsDownPt; string smsDownRow = ""; bool smsMoved;   // 短信行单击识别（按下后未拖动且在 up 时命中 sms 行）
         long lastTrayDoubleClickTicks;
         Image logoImg;                             // 标题栏左侧 logo，从内嵌 ico 取 64px 帧后缩放
         Thread poll;
@@ -147,6 +149,63 @@ namespace HwWidget
             d.user = string.IsNullOrEmpty(cfg.user) ? "admin" : cfg.user;
             d.password = cfg.password;
             return d;
+        }
+
+        // ---------------------------------------------------------------- 短信窗设备门面
+        // 设备协议是单会话：短信操作复用悬浮窗的 dev 与 devLock，避免第二个 Device 实例与轮询互相顶号。
+        // 调用均来自短信窗后台线程（非 UI 线程），抢锁超时不会冻结界面。
+        public List<SmsItem> SmsQuery(int page, int size, ref string err)
+        {
+            if (!Monitor.TryEnter(devLock, 20000)) { err = L.T("sms.busy"); return null; }
+            try { string e2; var l = dev.Sms(page, size, out e2); err = e2; return l; }
+            finally { Monitor.Exit(devLock); }
+        }
+
+        public string SmsMarkRead(List<string> idx)
+        {
+            if (!Monitor.TryEnter(devLock, 20000)) return L.T("sms.busy");
+            try { return dev.MarkRead(idx); }
+            finally { Monitor.Exit(devLock); }
+        }
+
+        public string SmsDelete(List<string> idx)
+        {
+            if (!Monitor.TryEnter(devLock, 20000)) return L.T("sms.busy");
+            try { return dev.DeleteSms(idx); }
+            finally { Monitor.Exit(devLock); }
+        }
+
+        public int SmsTotal()
+        {
+            if (!Monitor.TryEnter(devLock, 20000)) return -1;
+            try { return dev.SmsInboxTotal(); }
+            finally { Monitor.Exit(devLock); }
+        }
+
+        public void SmsCounts(out int unread, out int total)
+        {
+            var s = snap;
+            if (s == null) { unread = 0; total = 0; }
+            else { unread = s.smsUnread; total = s.smsInbox; }
+        }
+
+        public void NotifyResample() { wake.Set(); }
+
+        void ShowSms()
+        {
+            // 模态且不传 owner（与 ShowSettings 同理防焦点错乱）；重入时直接激活已开窗口
+            if (smsForm != null && !smsForm.IsDisposed)
+            {
+                smsForm.Activate();
+                smsForm.BringToFront();
+                return;
+            }
+            using (var f = new SmsForm(this))
+            {
+                smsForm = f;
+                try { f.ShowDialog(); }
+                finally { smsForm = null; }
+            }
         }
 
         // ---------------------------------------------------------------- 外观 / 字体
@@ -932,6 +991,9 @@ namespace HwWidget
                 dragging = true;
                 dragOff = e.Location;
             }
+            smsDownPt = e.Location;
+            smsDownRow = e.Button == MouseButtons.Left ? RowKeyAt(e.Y) : "";
+            smsMoved = false;
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
@@ -940,6 +1002,7 @@ namespace HwWidget
             if (dragging && !cfg.locked && (e.Button & MouseButtons.Left) != 0)
             {
                 Location = new Point(Location.X + e.X - dragOff.X, Location.Y + e.Y - dragOff.Y);
+                if (!smsMoved && (Math.Abs(e.X - smsDownPt.X) > 3 || Math.Abs(e.Y - smsDownPt.Y) > 3)) smsMoved = true;
                 HideHostsTip();
             }
             else
@@ -956,6 +1019,18 @@ namespace HwWidget
         {
             base.OnMouseUp(e);
             if (dragging) { dragging = false; SavePos(); }
+            if (!smsMoved && e.Button == MouseButtons.Left && smsDownRow == "sms") ShowSms();
+        }
+
+        /// <summary>按 Y 坐标命中行（含 Plan 行额外高度），返回行 key，未命中返回空。</summary>
+        string RowKeyAt(int y)
+        {
+            for (int i = 0; i < rows.Length; i++)
+            {
+                int h = rowH + RowGap + (rows[i].kind == Kind.Plan ? 12 : 0);
+                if (y >= rowTops[i] && y < rowTops[i] + h) return rows[i].key;
+            }
+            return "";
         }
 
         void SavePos()
@@ -1016,6 +1091,7 @@ namespace HwWidget
                     else { Show(); BringToFront(); TopMost = false; TopMost = cfg.topmost; }
                     break;
                 case "settings": ShowSettings(); break;
+                case "sms": ShowSms(); break;
                 case "refresh":
                     // ForgetSession 很轻量，但 devLock 会被 stuck 的 Sample 长持；抢不到锁就跳过，
                     // 下一次采样会因会话死自动重登。
@@ -1153,6 +1229,7 @@ namespace HwWidget
             Add(m, L.T("menu.settings"), "settings");
             Add(m, L.T("menu.refresh"), "refresh");
             Add(m, L.T("menu.manage"), "manage");
+            Add(m, L.T("menu.sms"), "sms");
             m.Items.Add(new ToolStripSeparator());
             var t = Add(m, (cfg.topmost ? L.T("menu.topoff") : L.T("menu.topon")), "top"); t.Tag = "top";
             var l = Add(m, (cfg.locked ? L.T("menu.unlock") : L.T("menu.lock")), "lock"); l.Tag = "lock";

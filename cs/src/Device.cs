@@ -813,6 +813,13 @@ namespace HwWidget
         public string MarkRead(List<string> indexes) { return SmsAction("/api/sms/set-read", indexes); }
         public string DeleteSms(List<string> indexes) { return SmsAction("/api/sms/delete-sms", indexes); }
 
+        /// <summary>短信总数（LocalInbox），供短信窗算真实总页数。</summary>
+        public int SmsInboxTotal()
+        {
+            var d = Get("/api/sms/sms-count");
+            return (int)Lng(d, "LocalInbox");
+        }
+
         string SmsAction(string path, List<string> indexes)
         {
             if (!Login(false)) return errText;

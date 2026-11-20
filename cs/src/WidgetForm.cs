@@ -32,6 +32,7 @@ namespace HwWidget
         System.Windows.Forms.Timer clockTimer, hintTimer, saveTimer, trayClickTimer;
         SettingsForm settingsForm;
         SmsForm smsForm;
+        HostsForm hostsForm;
         Point smsDownPt; string smsDownRow = ""; bool smsMoved;   // 短信行单击识别（按下后未拖动且在 up 时命中 sms 行）
         long lastTrayDoubleClickTicks;
         Image logoImg;                             // 标题栏左侧 logo，从内嵌 ico 取 64px 帧后缩放
@@ -184,6 +185,17 @@ namespace HwWidget
 
         public void NotifyResample() { wake.Set(); }
 
+        // 终端列表直接取已轮询的 snap.hosts（无需再访问设备，避免顶号）；返回副本防轮询线程并发修改。
+        public List<Host> HostsList(out int active, out int total)
+        {
+            var s = snap;
+            var copy = new List<Host>();
+            if (s == null) { active = 0; total = 0; return copy; }
+            copy.AddRange(s.hosts);
+            active = s.hostsActive; total = s.hostsTotal;
+            return copy;
+        }
+
         void ShowSms()
         {
             // 模态且不传 owner（与 ShowSettings 同理防焦点错乱）；重入时直接激活已开窗口
@@ -198,6 +210,23 @@ namespace HwWidget
                 smsForm = f;
                 try { f.ShowDialog(); }
                 finally { smsForm = null; }
+            }
+        }
+
+        void ShowHosts()
+        {
+            // 与 ShowSms 同款：模态、不传 owner、重入时激活已开窗口。
+            if (hostsForm != null && !hostsForm.IsDisposed)
+            {
+                hostsForm.Activate();
+                hostsForm.BringToFront();
+                return;
+            }
+            using (var f = new HostsForm(this))
+            {
+                hostsForm = f;
+                try { f.ShowDialog(); }
+                finally { hostsForm = null; }
             }
         }
 
@@ -1035,7 +1064,10 @@ namespace HwWidget
         protected override void OnMouseDoubleClick(MouseEventArgs e)
         {
             base.OnMouseDoubleClick(e);
-            if (e.Button == MouseButtons.Left) Do("manage");
+            if (e.Button != MouseButtons.Left) return;
+            // 双击终端行 → 弹出全部终端列表；其余位置 → 打开设备管理页。
+            if (RowKeyAt(e.Y) == "hosts") { HideHostsTip(); ShowHosts(); }
+            else Do("manage");
         }
 
         protected override void OnMouseWheel(MouseEventArgs e)

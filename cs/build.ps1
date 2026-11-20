@@ -76,7 +76,7 @@ try {
         @iconArgs `
         $asmInfo `
         (Join-Path $src 'Device.cs') (Join-Path $src 'Config.cs') (Join-Path $src 'Lang.cs') (Join-Path $src 'WidgetForm.cs') `
-        (Join-Path $src 'SettingsForm.cs') (Join-Path $src 'SmsForm.cs') (Join-Path $src 'Win32Controls.cs') (Join-Path $src 'Program.cs')
+        (Join-Path $src 'SettingsForm.cs') (Join-Path $src 'SmsForm.cs') (Join-Path $src 'HostsForm.cs') (Join-Path $src 'Win32Controls.cs') (Join-Path $src 'Program.cs')
     if ($LASTEXITCODE -ne 0) { throw "编译失败: $LASTEXITCODE" }
 
     # ---- 同步 README 版本徽标与“当前版本”文字（仅替换标记位置，不动其它内容）----

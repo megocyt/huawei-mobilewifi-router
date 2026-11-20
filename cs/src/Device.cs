@@ -48,6 +48,11 @@ namespace HwWidget
     {
         public string name = "", mac = "", ip = "", band = "", brand = "";
         public bool active;
+        // 以下字段取自设备 /api/system/HostInfo 逐台终端的完整信息
+        public string ip6 = "", ifType = "", addrSource = "", ssid = "", vendorId = "", lastAccess = "";
+        public bool guest, local;
+        public long rxK, txK;        // 累计流量（KB）
+        public long assocSec;        // 本次在线时长（秒）
     }
 
     public class SmsItem
@@ -514,6 +519,19 @@ namespace HwWidget
                 host.brand = Str(h, "DevBrands");
                 if (string.IsNullOrEmpty(host.brand)) host.brand = Str(h, "VendorClassID");
                 host.active = IsActive(h, "Active") || IsActive(h, "WlanActive");
+                host.ip6 = Str(h, "IPv6Address");
+                host.ifType = Str(h, "InterfaceType");
+                host.addrSource = Str(h, "AddressSource");
+                host.ssid = Str(h, "SsidName");
+                host.vendorId = Str(h, "VendorClassID");
+                host.guest = IsActive(h, "IsGuest");
+                host.local = IsActive(h, "IsLocalDevice");
+                host.rxK = Lng(h, "RxKBytes");
+                host.txK = Lng(h, "TxKBytes");
+                host.assocSec = Lng(h, "AssociatedTime");
+                string ar = Str(h, "AccessRecord");
+                int hash = ar.IndexOf('#');
+                host.lastAccess = hash >= 0 ? ar.Substring(0, hash).Trim() : ar.Trim();
                 s.hosts.Add(host);
                 s.hostsTotal++;
                 if (host.active) s.hostsActive++;

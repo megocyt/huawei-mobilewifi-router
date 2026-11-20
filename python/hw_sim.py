@@ -91,15 +91,27 @@ class Sim:
         self.set_month_data = "1"
 
         self.hosts = [
-            {"ActualName": "iPhone-12", "MACAddress": "A4:83:E7:1A:2B:3C",
-             "IPAddress": self.lan_ip + ".100", "Frequency": "2.4G",
-             "DevBrands": "Apple", "Active": True},
-            {"ActualName": "MateBook-Pro", "MACAddress": "F0:72:8C:5D:6E:7F",
-             "IPAddress": self.lan_ip + ".101", "Frequency": "5G",
-             "DevBrands": "HUAWEI", "Active": True},
-            {"ActualName": "MioT-Sensor", "MACAddress": "C4:B3:01:9A:8B:7C",
-             "IPAddress": self.lan_ip + ".102", "Frequency": "2.4G",
-             "DevBrands": "Xiaomi", "Active": False},
+            {"ActualName": "iPhone-12", "HostName": "iPhone-12", "MACAddress": "A4:83:E7:1A:2B:3C",
+             "IPAddress": self.lan_ip + ".100", "IPv6Address": "fe80::a483:e7ff:fe1a:2b3c",
+             "Frequency": "2.4GHz", "DevBrands": "Apple", "VendorClassID": "MSFT 5.0",
+             "InterfaceType": "Wireless", "AddressSource": "DHCP", "SsidName": "HUAWEI_00A2",
+             "IsGuest": False, "IsLocalDevice": False, "Active": True, "WlanActive": True,
+             "RxKBytes": "102400", "TxKBytes": "20480", "AssociatedTime": 3600,
+             "AccessRecord": "2026-11-18 09:12:30#1#1"},
+            {"ActualName": "MateBook-Pro", "HostName": "MateBook-Pro", "MACAddress": "F0:72:8C:5D:6E:7F",
+             "IPAddress": self.lan_ip + ".101", "IPv6Address": "fe80::f272:8cff:fe5d:6e7f",
+             "Frequency": "5GHz", "DevBrands": "HUAWEI", "VendorClassID": "MSFT 5.0",
+             "InterfaceType": "Wireless", "AddressSource": "DHCP", "SsidName": "HUAWEI_00A2",
+             "IsGuest": False, "IsLocalDevice": True, "Active": True, "WlanActive": True,
+             "RxKBytes": "5242880", "TxKBytes": "1310720", "AssociatedTime": 7200,
+             "AccessRecord": "2026-11-20 08:40:04#1#1"},
+            {"ActualName": "MioT-Sensor", "HostName": "MioT-Sensor", "MACAddress": "C4:B3:01:9A:8B:7C",
+             "IPAddress": self.lan_ip + ".102", "IPv6Address": "fe80::c6b3:1ff:fe9a:8b7c",
+             "Frequency": "2.4GHz", "DevBrands": "Xiaomi", "VendorClassID": "udhcp 1.37.0",
+             "InterfaceType": "Wireless", "AddressSource": "Static", "SsidName": "HUAWEI_IoT",
+             "IsGuest": True, "IsLocalDevice": False, "Active": False, "WlanActive": False,
+             "RxKBytes": "0", "TxKBytes": "0", "AssociatedTime": 0,
+             "AccessRecord": "2026-09-17 08:58:41#1#1"},
         ]
 
         base = time.time()

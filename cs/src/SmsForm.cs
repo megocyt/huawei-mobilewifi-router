@@ -56,6 +56,7 @@ namespace HwWidget
             // ---- 工具行：刷新 / 标记已读 / 删除 …… 计数 …… 翻页 ◀ 页码 ▶
             int ty = TitleH + 8;
             btnRefresh = MakeButton(L.T("menu.refresh"), 76);
+            btnRefresh.Left = 12;
             btnRefresh.Click += delegate { if (!busy) Reload(page); };
             btnRead = MakeButton(L.T("sms.markread"), 92);
             btnRead.Left = btnRefresh.Right + 8;

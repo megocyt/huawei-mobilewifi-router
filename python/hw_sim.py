@@ -355,6 +355,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_xml("")
             elif path.endswith("/api/sms/sms-list-contact"):
                 self._send_sms_list(fields)
+            elif path.endswith("/api/sms/sms-list-phone"):
+                self._send_sms_list_phone(fields)
             elif path.endswith("/api/sms/set-read"):
                 self._mark_read(multi.get("Index", []))
                 self._send_xml("")
@@ -393,6 +395,31 @@ class Handler(BaseHTTPRequestHandler):
                     index=m["index"], phone=esc(m["phone"]), date=m["date"],
                     content=esc(m["content"]), smstat=m["smstat"]))
         self._send_xml("<Count>{}</Count><messages>{}</messages>".format(len(chunk), "".join(items)))
+
+    def _send_sms_list_phone(self, fields):
+        # 真机语义：sms-list-phone 按 phone 过滤，返回该号码会话内的全部短信（分页）
+        s = self.sim
+        phone = (fields.get("phone") or "").strip()
+        try:
+            page = max(1, int(fields.get("pageindex") or 1))
+        except ValueError:
+            page = 1
+        try:
+            size = max(1, int(fields.get("readcount") or 20))
+        except ValueError:
+            size = 20
+        thread = sorted([m for m in s.sms if m["phone"] == phone],
+                        key=lambda m: m["date"], reverse=True)
+        chunk = thread[(page - 1) * size: page * size]
+        items = []
+        for m in chunk:
+            items.append(
+                "<message><index>{index}</index><phone>{phone}</phone>"
+                "<date>{date}</date><content>{content}</content>"
+                "<smstat>{smstat}</smstat></message>".format(
+                    index=m["index"], phone=esc(m["phone"]), date=m["date"],
+                    content=esc(m["content"]), smstat=m["smstat"]))
+        self._send_xml("<count>{}</count><messages>{}</messages>".format(len(chunk), "".join(items)))
 
     def _mark_read(self, indexes):
         want = set(indexes)

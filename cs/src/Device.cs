@@ -785,40 +785,81 @@ namespace HwWidget
         }
 
         // ---------------------------------------------------------------- 短信 / 操作
-        public List<SmsItem> Sms(int page, int size, out string error)
+        /// <summary>逐条（非会话分组）取出全部短信并按时间倒序合并。
+        /// 设备只暴露两个列表接口：sms-list-contact 每个号码只回最新一条（会话视图），
+        /// sms-list-phone 才给出该号码会话内的全部短信。故先枚举所有号码，再逐个取全，
+        /// 用 index 去重（设备分页有重叠、末页不足整页），最后按日期倒序合并。</summary>
+        public List<SmsItem> SmsAll(out string error)
         {
             error = null;
-            if (!Login(false)) { error = errText; return new List<SmsItem>(); }
-            var r = Post("/api/sms/sms-list-contact", Dict("pageindex", page, "readcount", size));
-            string fail = Fail(r);
-            if (fail != null) { error = fail; return new List<SmsItem>(); }
             var list = new List<SmsItem>();
-            var msgs = Sub(r, "messages");
-            foreach (var o in Arr(msgs, "message"))
+            if (!Login(false)) { error = errText; return list; }
+
+            // 1) 枚举全部会话号码
+            var phones = new List<string>();
+            var phoneSeen = new HashSet<string>();
+            for (int cp = 1; cp <= 40; cp++)
             {
-                var m = o as Dictionary<string, object>;
-                if (m == null) continue;
-                var item = new SmsItem();
-                item.index = Str(m, "index");
-                item.phone = Str(m, "phone");
-                item.date = Str(m, "date");
-                item.content = Str(m, "content").Replace("&#x0D;", "").Replace("\r", "").Trim();
-                item.unread = Str(m, "smstat") == "0";
-                list.Add(item);
+                var r = Post("/api/sms/sms-list-contact", Dict("pageindex", cp, "readcount", 20));
+                if (Fail(r) != null) break;
+                var arr = Arr(Sub(r, "messages"), "message");
+                if (arr.Count == 0) break;
+                foreach (var o in arr)
+                {
+                    var m = o as Dictionary<string, object>;
+                    if (m == null) continue;
+                    string ph = Str(m, "phone");
+                    if (ph.Length > 0 && phoneSeen.Add(ph)) phones.Add(ph);
+                }
+                if (arr.Count < 20) break;
             }
+
+            // 2) 逐个号码取其会话内全部短信，按 index 去重
+            var idxSeen = new HashSet<string>();
+            foreach (var ph in phones)
+            {
+                for (int tp = 1; tp <= 40; tp++)
+                {
+                    var r = Post("/api/sms/sms-list-phone", Dict("phone", ph, "pageindex", tp, "readcount", 20));
+                    if (Fail(r) != null) break;
+                    var arr = Arr(Sub(r, "messages"), "message");
+                    if (arr.Count == 0) break;
+                    int fresh = 0;
+                    foreach (var o in arr)
+                    {
+                        var m = o as Dictionary<string, object>;
+                        if (m == null) continue;
+                        string index = Str(m, "index");
+                        if (index.Length > 0 && !idxSeen.Add(index)) continue;   // 分页重叠 → 跳过已取
+                        fresh++;
+                        var item = new SmsItem();
+                        item.index = index;
+                        item.phone = Str(m, "phone");
+                        item.date = Str(m, "date");
+                        item.content = Decode(Str(m, "content")).Trim();
+                        item.unread = Str(m, "smstat") == "0";
+                        list.Add(item);
+                    }
+                    if (arr.Count < 20 || fresh == 0) break;                      // 末页或全旧 → 该会话结束
+                }
+            }
+
             list.Sort((a, b) => string.CompareOrdinal(b.date, a.date));
             return list;
         }
 
+        /// <summary>设备正文里的 XML/HTML 实体转回可读字符。</summary>
+        static string Decode(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return s.Replace("&#x0D;", "").Replace("\r", "")
+                    .Replace("&#x2F;", "/").Replace("&quot;", "\"")
+                    .Replace("&apos;", "'").Replace("&lt;", "<")
+                    .Replace("&gt;", ">").Replace("&amp;", "&");
+        }
+
         public string MarkRead(List<string> indexes) { return SmsAction("/api/sms/set-read", indexes); }
         public string DeleteSms(List<string> indexes) { return SmsAction("/api/sms/delete-sms", indexes); }
-
-        /// <summary>短信总数（LocalInbox），供短信窗算真实总页数。</summary>
-        public int SmsInboxTotal()
-        {
-            var d = Get("/api/sms/sms-count");
-            return (int)Lng(d, "LocalInbox");
-        }
 
         string SmsAction(string path, List<string> indexes)
         {

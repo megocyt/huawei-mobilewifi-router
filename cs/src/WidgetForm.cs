@@ -154,10 +154,10 @@ namespace HwWidget
         // ---------------------------------------------------------------- 短信窗设备门面
         // 设备协议是单会话：短信操作复用悬浮窗的 dev 与 devLock，避免第二个 Device 实例与轮询互相顶号。
         // 调用均来自短信窗后台线程（非 UI 线程），抢锁超时不会冻结界面。
-        public List<SmsItem> SmsQuery(int page, int size, ref string err)
+        public List<SmsItem> SmsQueryAll(ref string err)
         {
-            if (!Monitor.TryEnter(devLock, 20000)) { err = L.T("sms.busy"); return null; }
-            try { string e2; var l = dev.Sms(page, size, out e2); err = e2; return l; }
+            if (!Monitor.TryEnter(devLock, 30000)) { err = L.T("sms.busy"); return null; }
+            try { string e2; var l = dev.SmsAll(out e2); err = e2; return l; }
             finally { Monitor.Exit(devLock); }
         }
 
@@ -172,13 +172,6 @@ namespace HwWidget
         {
             if (!Monitor.TryEnter(devLock, 20000)) return L.T("sms.busy");
             try { return dev.DeleteSms(idx); }
-            finally { Monitor.Exit(devLock); }
-        }
-
-        public int SmsTotal()
-        {
-            if (!Monitor.TryEnter(devLock, 20000)) return -1;
-            try { return dev.SmsInboxTotal(); }
             finally { Monitor.Exit(devLock); }
         }
 

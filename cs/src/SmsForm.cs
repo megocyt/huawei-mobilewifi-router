@@ -25,7 +25,8 @@ namespace HwWidget
         Font fUnread;
         int page = 1;                     // 1 起
         bool busy;
-        List<SmsItem> items = new List<SmsItem>();
+        List<SmsItem> all = new List<SmsItem>();   // 逐条全部短信（已按时间倒序）
+        int PageCount { get { return Math.Max(1, (all.Count + PageSize - 1) / PageSize); } }
 
         public SmsForm(WidgetForm owner)
         {
@@ -55,7 +56,7 @@ namespace HwWidget
             // ---- 工具行：刷新 / 标记已读 / 删除 …… 计数 …… 翻页 ◀ 页码 ▶
             int ty = TitleH + 8;
             btnRefresh = MakeButton(L.T("menu.refresh"), 76);
-            btnRefresh.Click += delegate { if (!busy) LoadPage(page); };
+            btnRefresh.Click += delegate { if (!busy) Reload(page); };
             btnRead = MakeButton(L.T("sms.markread"), 92);
             btnRead.Left = btnRefresh.Right + 8;
             btnRead.Click += delegate { OpRead(); };
@@ -63,10 +64,10 @@ namespace HwWidget
             btnDel.Left = btnRead.Right + 8;
             btnDel.Click += delegate { OpDelete(); };
             btnPrev = MakeButton("‹", 34);
-            btnPrev.Click += delegate { if (!busy && page > 1) LoadPage(page - 1); };
+            btnPrev.Click += delegate { if (!busy && page > 1) { page--; SetButtons(); Render(); } };
             btnNext = MakeButton("›", 34);
             btnNext.Left = WinW - 12 - 34;
-            btnNext.Click += delegate { if (!busy) LoadPage(page + 1); };
+            btnNext.Click += delegate { if (!busy && page < PageCount) { page++; SetButtons(); Render(); } };
             btnPrev.Left = btnNext.Left - 8 - 34;
             lblPage = new Label { AutoSize = true, Text = "" };
             lblPage.Left = btnPrev.Left - 10 - TextRenderer.MeasureText("第 000 / 000 页", Font).Width;
@@ -145,10 +146,11 @@ namespace HwWidget
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
-            LoadPage(1);
+            Reload(1);
         }
 
-        void LoadPage(int p)
+        /// <summary>向设备拉取全部逐条短信（一次取全），完成后渲染当前页。</summary>
+        void Reload(int p)
         {
             if (busy) return;
             busy = true;
@@ -160,16 +162,15 @@ namespace HwWidget
             {
                 string err = "";
                 List<SmsItem> list = null;
-                int total = -1;
-                try { list = w.SmsQuery(page, PageSize, ref err); total = w.SmsTotal(); }
+                try { list = w.SmsQueryAll(ref err); }
                 catch (Exception ex) { err = ex.Message; }
-                try { BeginInvoke(new Action(delegate { Loaded(list, err, total); })); }
+                try { BeginInvoke(new Action(delegate { Loaded(list, err); })); }
                 catch (InvalidOperationException) { }      // 关窗竞态
             }) { IsBackground = true };
             t.Start();
         }
 
-        void Loaded(List<SmsItem> list, string err, int total)
+        void Loaded(List<SmsItem> list, string err)
         {
             busy = false;
             if (list == null)
@@ -177,14 +178,24 @@ namespace HwWidget
                 lblStatus.Text = string.IsNullOrEmpty(err) ? L.T("v.fail") : err;
                 lblStatus.ForeColor = Color.FromArgb(196, 43, 28);
                 SetButtons();
-                UpdateCount(-1);
                 return;
             }
-            items = list;
+            all = list;
+            if (page > PageCount) page = PageCount;
+            lblStatus.ForeColor = Color.Gray;
+            SetButtons();
+            Render();
+        }
+
+        /// <summary>从缓存 all 切出当前页渲染；翻页不再访问设备。</summary>
+        void Render()
+        {
             lv.BeginUpdate();
             lv.Items.Clear();
-            foreach (var it in list)
+            int start = (page - 1) * PageSize;
+            for (int i = start; i < start + PageSize && i < all.Count; i++)
             {
+                var it = all[i];
                 var li = new ListViewItem(it.phone);
                 li.SubItems.Add(it.date);
                 li.SubItems.Add(OneLine(it.content));
@@ -193,23 +204,13 @@ namespace HwWidget
                 lv.Items.Add(li);
             }
             lv.EndUpdate();
-            lblStatus.Text = list.Count == 0 ? L.T("sms.empty") : " ";
-            lblStatus.ForeColor = Color.Gray;
-            // 总条数取自设备 sms-count（LocalInbox），页码真实：只有一页时《》均禁用
-            int pages = total > 0 ? (total + PageSize - 1) / PageSize : 1;
-            lblPage.Text = string.Format(L.T("sms.page"), page, pages);
-            btnNext.Enabled = !busy && page < pages;
-            SetButtons();
-            UpdateCount(total);
-            ShowDetail();
-        }
-
-        void UpdateCount(int total)
-        {
+            lblStatus.Text = all.Count == 0 ? L.T("sms.empty") : " ";
+            // 数量：未读 + 逐条短信实际总条数（与网页会话折叠无关，就是设备上的短信条数）
             int u, snapTotal;
             w.SmsCounts(out u, out snapTotal);
-            if (total < 0) total = snapTotal;      // 抢锁失败时退回快照值
-            lblCount.Text = string.Format(L.T("sms.count"), u, total);
+            lblCount.Text = string.Format(L.T("sms.count"), u, all.Count);
+            lblPage.Text = string.Format(L.T("sms.page"), page, PageCount);
+            ShowDetail();
         }
 
         static string OneLine(string s)
@@ -288,17 +289,16 @@ namespace HwWidget
                 SetButtons();
                 return;
             }
-            // 删除后当前页可能已被后页补满或空掉：删空且非首页则回退一页
-            int back = page;
-            if (what == "del" && n > 0 && items.Count == n && page > 1) back = page - 1;
+            // 删除/已读后从设备重新拉取；若当前页超出新的总页数，Loaded 会自动回夹。
             w.NotifyResample();           // 让悬浮窗立刻重采，刷新未读计数
-            LoadPage(back);
+            Reload(page);
         }
 
         void SetButtons()
         {
             btnRefresh.Enabled = !busy;
             btnPrev.Enabled = !busy && page > 1;
+            btnNext.Enabled = !busy && page < PageCount;
             btnClose.Enabled = true;
             UpdateBtnState();
         }

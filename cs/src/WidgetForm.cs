@@ -417,7 +417,7 @@ namespace HwWidget
             if (On("uptime"))
                 outRows.Add(new Row { key = "uptime", label = L.T("lbl.uptime"), value = (has && s.uptime > 0) ? Device.HumanDur(s.uptime) : "-", color = Col("fg") });
             if (On("sms"))
-                outRows.Add(new Row { key = "sms", label = L.T("lbl.sms"), value = has ? string.Format(L.T("fmt.smsunread"), s.smsUnread) : "-", color = Col(has && s.smsUnread > 0 ? "warn" : "fg") });
+                outRows.Add(new Row { key = "sms", label = L.T("lbl.sms"), value = has ? string.Format(L.T("fmt.sms"), s.smsUnread, s.smsInbox) : "-", color = Col(has && s.smsUnread > 0 ? "warn" : "fg") });
             if (On("clock"))
                 outRows.Add(new Row { key = "clock", label = L.T("lbl.clock"), value = DateTime.Now.ToString("HH:mm:ss"), color = Col("fg"), mono = true });
             return outRows;

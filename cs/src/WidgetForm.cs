@@ -1117,6 +1117,7 @@ namespace HwWidget
                     break;
                 case "settings": ShowSettings(); break;
                 case "sms": ShowSms(); break;
+                case "hosts": ShowHosts(); break;
                 case "refresh":
                     // ForgetSession 很轻量，但 devLock 会被 stuck 的 Sample 长持；抢不到锁就跳过，
                     // 下一次采样会因会话死自动重登。
@@ -1255,6 +1256,7 @@ namespace HwWidget
             Add(m, L.T("menu.refresh"), "refresh");
             Add(m, L.T("menu.manage"), "manage");
             Add(m, L.T("menu.sms"), "sms");
+            Add(m, L.T("menu.hosts"), "hosts");
             m.Items.Add(new ToolStripSeparator());
             var t = Add(m, (cfg.topmost ? L.T("menu.topoff") : L.T("menu.topon")), "top"); t.Tag = "top";
             var l = Add(m, (cfg.locked ? L.T("menu.unlock") : L.T("menu.lock")), "lock"); l.Tag = "lock";

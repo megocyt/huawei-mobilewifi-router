@@ -27,6 +27,8 @@ namespace HwWidget
         WinTrackBar alphaBar;
         Label alphaVal;
         WinComboBox langBox, fontBox;
+        string stylePick;                                  // 样式页当前选中（full/mini），SyncToCfg 才写回 cfg
+        StyleCard cardFull, cardMini;
         WinCheckBox savePwdBox, topBox, lockBox, borderBox, titleBox, autoStartBox, ctBorderBox;
         readonly Dictionary<string, WinCheckBox> rowBoxes = new Dictionary<string, WinCheckBox>();
         readonly Dictionary<string, ColorBox> colorBtns = new Dictionary<string, ColorBox>();
@@ -86,14 +88,50 @@ namespace HwWidget
             lookSub = null;
             rowBoxes.Clear();
             colorBtns.Clear();
+            stylePick = cfg.style;      // 语言切换/恢复默认后重建时以同步后的 cfg 为准
 
             var tConn = tabs.AddPage(L.T("tab.conn"));
+            var tStyle = tabs.AddPage(L.T("tab.style"));
             var tLook = tabs.AddPage(L.T("tab.look"));
             var tRows = tabs.AddPage(L.T("tab.rows"));
             BuildConnPage(tConn);
+            BuildStylePage(tStyle);
             BuildLookPage(tLook);
             BuildRowsPage(tRows);
             tabs.SelectedIndex = 0;
+        }
+
+        /// <summary>样式页：两张可点缩略图卡片，按用户当前配色真实预览完整卡片 / 迷你监控条效果。</summary>
+        void BuildStylePage(Panel p)
+        {
+            var tip = new Label { Text = L.T("tip.stylepick"), AutoSize = true, ForeColor = Color.Gray, Left = Gutter, Top = 12 };
+            p.Controls.Add(tip);
+
+            Color bgc = SafeHtml(cfg.bg), fgc = SafeHtml(cfg.fg), acc = SafeHtml(cfg.accent), wrn = SafeHtml(cfg.warn);
+            const int cw = 226, ch = 212, top = 40;
+            cardFull = new StyleCard { Left = Gutter, Top = top, Width = cw, Height = ch, Mini = false,
+                Title = L.T("style.full"), Desc = L.T("style.full.desc"),
+                PBg = bgc, PFg = fgc, PAccent = acc, PWarn = wrn,
+                Picked = delegate { stylePick = "full"; RefreshStyleCards(); } };
+            cardMini = new StyleCard { Left = Gutter + cw + 16, Top = top, Width = cw, Height = ch, Mini = true,
+                Title = L.T("style.mini"), Desc = L.T("style.mini.desc"),
+                PBg = bgc, PFg = fgc, PAccent = acc, PWarn = wrn,
+                Picked = delegate { stylePick = "mini"; RefreshStyleCards(); } };
+            p.Controls.Add(cardFull); p.Controls.Add(cardMini);
+            RefreshStyleCards();
+        }
+
+        void RefreshStyleCards()
+        {
+            if (cardFull == null || cardFull.IsDisposed) return;
+            cardFull.Selected = stylePick != "mini";
+            cardMini.Selected = stylePick == "mini";
+            cardFull.Invalidate(); cardMini.Invalidate();
+        }
+
+        static Color SafeHtml(string hex)
+        {
+            try { return ColorTranslator.FromHtml(hex); } catch { return Color.FromArgb(13, 17, 23); }
         }
 
         /// <summary>连接页（常规布局）：语言 + 开机自启 + 设备连接组 + 安全组。</summary>
@@ -376,6 +414,7 @@ namespace HwWidget
             cfg.interval = Math.Max(2.0, (double)ivlBox.Value);
             cfg.alpha = alphaBar.Value / 100.0;
             cfg.fontSize = (int)sizeBox.Value;
+            cfg.style = stylePick;
             var fam = fontBox.SelectedItem;
             cfg.fontFam = string.IsNullOrEmpty(fam) ? "Microsoft YaHei UI" : fam;
             cfg.savePassword = savePwdBox.Checked;
@@ -399,7 +438,7 @@ namespace HwWidget
             cfg.fg = d.fg; cfg.bg = d.bg; cfg.accent = d.accent; cfg.warn = d.warn; cfg.bad = d.bad;
             cfg.topmost = d.topmost; cfg.borderless = d.borderless; cfg.locked = d.locked;
             cfg.showTitle = d.showTitle; cfg.savePassword = d.savePassword;
-            cfg.clickThroughBorder = d.clickThroughBorder;
+            cfg.clickThroughBorder = d.clickThroughBorder; cfg.style = d.style;
             foreach (var kv in d.rows) cfg.rows[kv.Key] = kv.Value;
         }
 
@@ -510,10 +549,11 @@ namespace HwWidget
             base.OnHandleCreated(e);
             try
             {
+                // 回归系统标准窗口观感（同 Snipaste 等常规 Win11 窗口）：DWM 平滑圆角 + 默认细描边 + 投影，
+                // 不再自绘 Region 圆角（锯齿且无投影），也不再用非默认描边色（会在桌面前形成可见白/黑边）
                 int round = 2;   // DWMWCP_ROUND
                 DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int));   // DWMWA_WINDOW_CORNER_PREFERENCE
-                // 固定 DWM 边框色为恒定浅灰（COLORREF=0x00BBGGRR），避免失活时 DWM 按系统默认再描一圈深色/强调色边
-                int border = 0x00DADADA;   // (218,218,218) 与 Pal.WindowBorder 一致
+                int border = 1;  // DWMWA_COLOR_DEFAULT：系统默认细边
                 DwmSetWindowAttribute(Handle, 34, ref border, sizeof(int));   // DWMWA_BORDER_COLOR
             }
             catch { }
@@ -661,6 +701,172 @@ namespace HwWidget
         }
     }
 
+    // ==================================================================== 样式选择卡片：缩略图按用户当前配色预览两种悬浮窗效果，点选切换
+    class StyleCard : Control
+    {
+        public string Title = "", Desc = "";
+        public bool Mini;            // false=完整卡片缩略图，true=迷你监控条缩略图
+        public bool Selected;
+        public Color PBg = Color.FromArgb(13, 17, 23), PFg = Color.FromArgb(230, 237, 243),
+                     PAccent = Color.FromArgb(63, 185, 80), PWarn = Color.FromArgb(210, 153, 34);
+        public Action Picked;
+
+        public StyleCard()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
+            BackColor = Color.White;
+            Cursor = Cursors.Hand;
+            TabStop = true;
+        }
+
+        protected override void OnMouseEnter(EventArgs e) { Anim.Set(this, "hover", 1); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { Anim.Set(this, "hover", 0); base.OnMouseLeave(e); }
+        protected override void OnClick(EventArgs e) { base.OnClick(e); if (Picked != null) Picked(); }
+        protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+        protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+        // 回车/空格键支持键盘选中（TabStop 聚焦后可用）
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+            if (e.KeyCode == Keys.Enter || e.KeyCode == Keys.Space) OnClick(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+            var body = new Rectangle(1, 1, Width - 3, Height - 3);
+            using (var path = Draw.Round(body, 8))
+            using (var b = new SolidBrush(Selected ? Color.FromArgb(240, 246, 252) : Color.White))
+                g.FillPath(b, path);
+            double hover = Anim.Get(this, "hover");
+            Color bc = Selected ? Pal.Accent : Draw.Lerp(Color.FromArgb(198, 200, 204), Pal.Accent, hover * 0.7);
+            using (var path = Draw.Round(body, 8))
+            using (var p = new Pen(bc, Selected ? 2f : 1f))
+                g.DrawPath(p, path);
+
+            // 缩略图区：浅灰铺底，内部居中画真实样式预览
+            var thumb = new Rectangle(12, 12, Width - 24, 140);
+            using (var b = new SolidBrush(Color.FromArgb(246, 247, 249))) g.FillRectangle(b, thumb);
+            using (var p = new Pen(Color.FromArgb(228, 230, 233))) g.DrawRectangle(p, thumb);
+            if (Mini) DrawMiniThumb(g, thumb); else DrawFullThumb(g, thumb);
+
+            // 底部标题 + 简述
+            TextRenderer.DrawText(g, Title, Font, new Rectangle(14, 158, Width - 28, 18),
+                Selected ? Pal.Accent : Color.FromArgb(40, 40, 40),
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            using (var fd = new Font(Font.FontFamily, 7.5f))
+                TextRenderer.DrawText(g, Desc, fd, new Rectangle(14, 178, Width - 28, 16), Color.Gray,
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+
+            if (Selected)
+            {
+                var badge = new Rectangle(Width - 32, 6, 20, 20);
+                using (var b = new SolidBrush(Pal.Accent)) g.FillEllipse(b, badge);
+                using (var p = new Pen(Color.White, 1.8f))
+                {
+                    float cx = badge.X + badge.Width / 2f, cy = badge.Y + badge.Height / 2f;
+                    g.DrawLines(p, new[] { new PointF(cx - 4, cy + 0.5f), new PointF(cx - 1.2f, cy + 3.2f), new PointF(cx + 4, cy - 2.6f) });
+                }
+            }
+        }
+
+        Color Mix(Color a, Color b, double t) { return Draw.Lerp(a, b, t); }
+
+        /// <summary>完整卡片缩略图：标题行 + 分隔线 + 网络/信号/速率/套餐四行示意。</summary>
+        void DrawFullThumb(Graphics g, Rectangle thumb)
+        {
+            int pw = 158, ph = 104;
+            var r = new Rectangle(thumb.X + (thumb.Width - pw) / 2, thumb.Y + (thumb.Height - ph) / 2, pw, ph);
+            using (var path = Draw.Round(r, 9))
+            using (var br = new LinearGradientBrush(r, Mix(PBg, Color.White, 0.06), PBg, 90f))
+                g.FillPath(br, path);
+            using (var fd = new Font("Microsoft YaHei UI", 6.5f))
+            {
+                Color muted = Mix(Color.Gray, PFg, 0.38);
+                // 标题行：logo 块 + 名称 + 右侧制式徽章
+                using (var b = new SolidBrush(Mix(PBg, PAccent, 0.5)))
+                    using (var p = Draw.Round(new Rectangle(r.X + 8, r.Y + 7, 10, 10), 3)) g.FillPath(b, p);
+                TextRenderer.DrawText(g, "HUAWEI WiFi", fd, new Point(r.X + 22, r.Y + 6), muted, TextFormatFlags.NoPrefix);
+                TextRenderer.DrawText(g, "4G+", fd, new Point(r.Right - 26, r.Y + 6), PAccent, TextFormatFlags.NoPrefix);
+                using (var pen = new Pen(Mix(PBg, Color.White, 0.14)))
+                    g.DrawLine(pen, r.X + 8, r.Y + 23, r.Right - 8, r.Y + 23);
+                // 信息行：左标签右值（标签随界面语言，内容为固定示意数据）
+                int ry = r.Y + 29;
+                Row(g, fd, r, ry, L.T("lbl.network"), "4G LTE · China", PAccent); ry += 18;
+                Row(g, fd, r, ry, L.T("lbl.signal"), null, PAccent);             // 值位画信号柱
+                DrawBars(g, r.Right - 20, ry + 3, 4, 3, PAccent, Mix(PBg, Color.White, 0.18)); ry += 18;
+                Row(g, fd, r, ry, L.T("lbl.rate"), "↓12.3M ↑4.5M", PFg); ry += 18;
+                Row(g, fd, r, ry, L.T("lbl.plan"), "65%", PAccent);
+                // 套餐进度条
+                var track = new Rectangle(r.X + 8, ry + 12, pw - 16, 3);
+                using (var b = new SolidBrush(Mix(PBg, Color.White, 0.13))) g.FillRectangle(b, track);
+                using (var b = new SolidBrush(PAccent))
+                    using (var p = Draw.Round(new Rectangle(track.X, track.Y, (int)(track.Width * 0.65), 3), 1)) g.FillPath(b, p);
+            }
+        }
+
+        /// <summary>迷你监控条缩略图：固定尺寸圆角小窗，左侧信号柱 + 单行速度（↑橙 / ↓绿）。</summary>
+        void DrawMiniThumb(Graphics g, Rectangle thumb)
+        {
+            int pw = 150, ph = 24;
+            var r = new Rectangle(thumb.X + (thumb.Width - pw) / 2, thumb.Y + (thumb.Height - ph) / 2, pw, ph);
+            using (var path = Draw.Round(r, 5))
+            using (var br = new LinearGradientBrush(r, Mix(PBg, Color.White, 0.06), PBg, 90f))
+                g.FillPath(br, path);
+            using (var fd = new Font("Consolas", 6.5f))
+            {
+                int cy = r.Y + ph / 2;
+                DrawBars(g, r.X + 7, cy - 7, 5, 3, PAccent, Mix(PBg, Color.White, 0.18));
+                int x = r.X + 28;
+                x = Glyph(g, x, cy, 'u', PWarn);
+                TextRenderer.DrawText(g, "0.3 KB/s", fd, new Point(x, cy - 7), PWarn, TextFormatFlags.NoPrefix);
+                x += TextRenderer.MeasureText(g, "0.3 KB/s", fd).Width + 6;
+                x = Glyph(g, x, cy, 'd', PAccent);
+                TextRenderer.DrawText(g, "33.1 KB/s", fd, new Point(x, cy - 7), PAccent, TextFormatFlags.NoPrefix);
+            }
+        }
+
+        void Row(Graphics g, Font f, Rectangle r, int y, string label, string value, Color vc)
+        {
+            Color muted = Mix(Color.Gray, PFg, 0.38);
+            TextRenderer.DrawText(g, label, f, new Point(r.X + 8, y + 1), muted, TextFormatFlags.NoPrefix);
+            if (value != null)
+                TextRenderer.DrawText(g, value, f, new Point(r.Right - 8 - TextRenderer.MeasureText(g, value, f).Width, y + 1), vc, TextFormatFlags.NoPrefix);
+        }
+
+        /// <summary>缩略图上行(u)/下行(d)箭头：实心三角头+矩形短杆（与迷你条真实绘制一致），返回下一个 x 坐标。</summary>
+        static int Glyph(Graphics g, int x, int cy, char dir, Color c)
+        {
+            float cx = x + 3f;
+            using (var b = new SolidBrush(c))
+            {
+                if (dir == 'd')
+                {
+                    g.FillRectangle(b, cx - 1f, cy - 5f, 2f, 6f);
+                    g.FillPolygon(b, new[] { new PointF(cx, cy + 4.5f), new PointF(cx - 2.5f, cy + 0.5f), new PointF(cx + 2.5f, cy + 0.5f) });
+                }
+                else
+                {
+                    g.FillPolygon(b, new[] { new PointF(cx, cy - 4.5f), new PointF(cx - 2.5f, cy - 0.5f), new PointF(cx + 2.5f, cy - 0.5f) });
+                    g.FillRectangle(b, cx - 1f, cy - 0.5f, 2f, 6f);
+                }
+            }
+            return x + 9;
+        }
+
+        static void DrawBars(Graphics g, int x, int top, int n, int lit, Color c, Color dim)
+        {
+            for (int i = 0; i < n; i++)
+                using (var b = new SolidBrush(i < lit ? c : dim))
+                {
+                    float bh = 2 + i * 2f;
+                    g.FillRectangle(b, x + i * 4, top + 11 - bh, 3, bh);
+                }
+        }
+    }
+
     static class Native
     {
         [DllImport("user32.dll")] public static extern bool ReleaseCapture();
@@ -675,6 +881,7 @@ namespace HwWidget
             var n = new Cfg();
             n.host = c.host; n.user = c.user; n.password = c.password;
             n.language = c.language;
+            n.style = c.style;
             n.interval = c.interval; n.alpha = c.alpha;
             n.fontFam = c.fontFam; n.fontSize = c.fontSize;
             n.fg = c.fg; n.bg = c.bg; n.accent = c.accent; n.warn = c.warn; n.bad = c.bad;

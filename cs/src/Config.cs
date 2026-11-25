@@ -24,6 +24,7 @@ namespace HwWidget
         public string user = "admin";
         public string password = "";
         public string language = "zh-CN";                    // zh-CN | en | zh-TW | ja | ru | ko
+        public string style = "full";                        // 悬浮窗样式：full=完整卡片 | mini=迷你速度/信号监控条
         public double interval = 3.0;
         public double alpha = 0.88;
         public string fontFam = "Microsoft YaHei UI";
@@ -92,6 +93,8 @@ namespace HwWidget
             c.user = Str(d, "user", c.user);
             c.password = Str(d, "password", "");
             c.language = Str(d, "language", c.language);
+            string st = Str(d, "style", c.style);
+            c.style = st == "mini" ? "mini" : "full";      // 未知值回退完整卡片，防手工改坏配置后渲染进 mini 分支失败
             c.interval = Num(d, "interval", c.interval);
             c.alpha = Num(d, "alpha", c.alpha);
             c.fontFam = Str(d, "font_family", c.fontFam);
@@ -150,6 +153,7 @@ namespace HwWidget
             Put(sb, "host", host); Put(sb, "user", user);
             Put(sb, "password", savePassword ? password : "");
             Put(sb, "language", language);
+            Put(sb, "style", style);
             PutNum(sb, "interval", interval); PutNum(sb, "alpha", Math.Round(alpha, 2));
             Put(sb, "font_family", fontFam); PutNum(sb, "font_size", fontSize);
             Put(sb, "fg", fg); Put(sb, "bg", bg); Put(sb, "accent", accent);

@@ -44,6 +44,9 @@ namespace HwWidget
         int rowH, labelW;                       // 统一行高与标签列宽，保证两列对齐
         string appliedLang = "";                // labelW 所依据的语言，用于语言实时切换后重算列宽
         const int W = 396, Pad = 14, Rad = 12, RowGap = 4, IconW = 22;
+        const int MiniW = 234, MiniH = 30;   // 迷你监控条固定尺寸：速度位数变化不抖动窗口
+        const int MiniColW = 78;             // 速度数值列宽（右对齐，固定列宽保证版式不动）
+        const int MiniBarColW = 30;          // 信号柱列固定宽度（居左，含间隔）
         Point dragOff;
         bool dragging;
         static string localIp = "";
@@ -54,6 +57,7 @@ namespace HwWidget
         Rectangle eyeRect = Rectangle.Empty;
 
         enum Kind { Text, Signal, Plan, Battery }
+        bool Mini { get { return cfg != null && cfg.style == "mini"; } }   // 迷你监控条样式（只显速度+信号）
         class Row
         {
             public string key, label, value;
@@ -280,6 +284,7 @@ namespace HwWidget
         [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hWnd, int nIndex);
         [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
         [DllImport("user32.dll")] static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+        [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);
 
         void ApplyClickThrough()
         {
@@ -304,6 +309,38 @@ namespace HwWidget
         {
             base.OnHandleCreated(e);
             ApplyClickThrough();      // 句柄（重）建后扩展样式会丢失，需重新应用
+            ApplyDwmFrame();          // DWM 描边/圆角属性同样随句柄重建丢失，需重新应用
+        }
+
+        /// <summary>Win11+ 的 DWM 会自动给窗口画一圈 1px 亮色描边（矮而深的迷你条上尤其明显，
+        /// 用户反馈的“白边”）；圆角已由 Region 自绘，因此同时禁用 DWM 默认圆角并去掉描边。</summary>
+        void ApplyDwmFrame()
+        {
+            try
+            {
+                int round = 1;      // DWMWCP_DONOTROUND
+                DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int));   // DWMWA_WINDOW_CORNER_PREFERENCE
+                int border = 2;     // DWMWA_COLOR_NONE：不画边框
+                DwmSetWindowAttribute(Handle, 34, ref border, sizeof(int));  // DWMWA_BORDER_COLOR
+            }
+            catch { }   // dwmapi 调用失败不影响功能（Win10 以下属性不存在）
+        }
+
+        // “有时候出现白边”的防护：DWM 描边属性可能在句柄重建/显隐/激活切换时被系统重置，
+        // 在这些时机统一补应用；并拦截非客户区绘制消息，阻止系统沿窗口边缘补画 1px 亮边
+        // （与 SettingsForm 同款处理；迷你条矮，1px 亮边在深色桌面上格外明显）。
+        protected override void OnActivated(EventArgs e) { base.OnActivated(e); ApplyDwmFrame(); }
+        protected override void OnDeactivate(EventArgs e) { base.OnDeactivate(e); ApplyDwmFrame(); }
+        protected override void OnVisibleChanged(EventArgs e) { base.OnVisibleChanged(e); if (Visible) ApplyDwmFrame(); }
+
+        protected override void WndProc(ref Message m)
+        {
+            const int WM_NCPAINT = 0x0085, WM_NCACTIVATE = 0x0086;
+            const int WM_NCUAHDRAWCAPTION = 0x00AE, WM_NCUAHDRAWFRAME = 0x00AF;
+            if (m.Msg == WM_NCUAHDRAWCAPTION || m.Msg == WM_NCUAHDRAWFRAME) { m.Result = IntPtr.Zero; return; }
+            if (m.Msg == WM_NCACTIVATE) { m.Result = (IntPtr)1; return; }
+            if (m.Msg == WM_NCPAINT) { m.Result = IntPtr.Zero; return; }
+            base.WndProc(ref m);
         }
 
         static Color Parse(string hex)
@@ -493,6 +530,7 @@ namespace HwWidget
         void Relayout()
         {
             if (appliedLang != L.Lang) ComputeLabelWidth();   // 语言实时切换后（未保存预览时）也重算列宽，避免长译文标签被截断
+            if (Mini) { RelayoutMini(); Invalidate(); return; }
             rows = BuildRows().ToArray();
             int h = HeaderHeight();
             rowTops = new int[rows.Length];
@@ -518,11 +556,37 @@ namespace HwWidget
             if (hostsPopup != null && hostsPopup.Visible) RefreshHostsTip();
         }
 
+        /// <summary>迷你监控条：固定尺寸圆角小窗，速度数值变化不再改变窗口宽度。</summary>
+        void RelayoutMini()
+        {
+            HideHostsTip();          // 旧卡片的终端悬停提示在迷你样式下无意义
+            if (ClientSize.Height != MiniH || ClientSize.Width != MiniW)
+            {
+                ClientSize = new Size(MiniW, MiniH);
+                using (var p = Round(new Rectangle(0, 0, MiniW, MiniH), 5))
+                {
+                    if (Region != null) Region.Dispose();
+                    Region = new Region(p);
+                }
+                KeepOnScreen();
+            }
+        }
+
+        /// <summary>样式切换/尺寸变化后把窗口拉回工作区，避免变宽后超出屏幕边缘。</summary>
+        void KeepOnScreen()
+        {
+            Rectangle wa = Screen.FromControl(this).WorkingArea;
+            int px = Math.Max(wa.Left, Math.Min(wa.Right - Width - 4, Left));
+            int py = Math.Max(wa.Top, Math.Min(wa.Bottom - Height - 4, Top));
+            if (px != Left || py != Top) Location = new Point(px, py);
+        }
+
         // ---------------------------------------------------------------- 绘制
         protected override void OnPaintBackground(PaintEventArgs e) { }
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            if (Mini) { PaintMini(e.Graphics); return; }
             Graphics g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
@@ -592,6 +656,117 @@ namespace HwWidget
             eyeRect = Rectangle.Empty;
             foreach (Row r in rows)
                 DrawRow(g, r, ref y, rc);
+        }
+
+        // ---------------------------------------------------------------- 迷你监控条绘制
+        /// <summary>迷你样式：固定尺寸单行监控条——↑ 上行速率（告警橙）/ ↓ 下行速率（正常绿），
+        /// 实心箭头图标与常见流量监控程序一致；右侧信号柱按质量着色；读取失败时显示叹号+错误文本。</summary>
+        void PaintMini(Graphics g)
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+            int w = ClientSize.Width, h = ClientSize.Height;
+            Color bgc = Parse(cfg.bg);
+            using (var br = new LinearGradientBrush(new Rectangle(0, 0, w, h), Blend(bgc, Color.White, 0.055f), bgc, 90f))
+                g.FillRectangle(br, ClientRectangle);
+            if (cfg.clickThrough && cfg.clickThroughBorder)
+                using (var p = Round(new Rectangle(2, 2, w - 5, h - 5), 4))
+                using (var pen = new Pen(Blend(bgc, Color.White, 0.22f), 2))
+                {
+                    pen.DashStyle = DashStyle.Dash;
+                    g.DrawPath(pen, p);
+                }
+
+            // 拖动提示（滚轮调透明度等）优先居中显示，与完整卡片行为一致
+            if (!string.IsNullOrEmpty(hint))
+            {
+                TextRenderer.DrawText(g, hint, fValue, new Rectangle(0, 0, w, h),
+                    Blend(Color.Gray, Parse(cfg.fg), 0.55f),
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+                return;
+            }
+
+            Snap s = snap;
+            bool has = s != null && s.ok;
+            int cy = h / 2;
+            // 读取失败：叹号 + 错误文本，尺寸保持固定
+            if (!has && !string.IsNullOrEmpty(err))
+            {
+                DrawMiniErr(g, 16, h / 2, Col("bad"));
+                string t = Trunc(err, 14);
+                Font owned;
+                Font vf = FitValueFont(g, fValue, t, w - 30 - 10, out owned);
+                TextRenderer.DrawText(g, t, vf, new Point(28, h / 2 - vf.Height / 2), Col("bad"), TextFormatFlags.NoPrefix);
+                if (owned != null) owned.Dispose();
+                return;
+            }
+
+            // 信号柱：左侧底部对齐，按信号质量着色；无数据时置灰（固定列宽，版式不随格数变化）
+            int n = has ? Math.Max(1, s.sigMax) : 5;
+            int lit = has ? s.sigBars : 0;
+            Color sc = has ? Col(s.rsrpLevel == "优" || s.rsrpLevel == "良" ? "accent" : s.rsrpLevel == "中" ? "warn" : s.rsrpLevel == "-" ? "fg" : "bad")
+                           : Blend(bgc, Color.White, 0.18f);
+            float bw = Math.Min(3f, 18f / n);
+            float bx0 = 10;
+            for (int i = 0; i < n; i++)
+            {
+                float bh = 3 + i * (11f / Math.Max(1, n - 1));
+                using (var b = new SolidBrush(i < lit ? sc : Blend(bgc, Color.White, 0.18f)))
+                    g.FillRectangle(b, bx0 + i * (bw + 1), cy + 7 - bh, bw, bh);
+            }
+
+            // 单行速度：箭头与文本同色（↑橙 / ↓绿），数值在固定列内右对齐，位数变化不挪版式
+            Color up = Col("warn"), dn = Col("accent");
+            int lh = Math.Max(fValue.Height, fMono.Height);
+            int aX = 10 + MiniBarColW;               // ↑ 箭头起点（信号柱列右侧）
+            DrawMiniArrow(g, true, up, aX, cy);
+            DrawMiniRate(g, has ? Device.HumanRate(s.rateUp) : "-", aX + 14, MiniColW, cy, lh, up);
+            DrawMiniArrow(g, false, dn, aX + 14 + MiniColW + 6, cy);
+            DrawMiniRate(g, has ? Device.HumanRate(s.rateDown) : "-", aX + 14 + MiniColW + 20, MiniColW, cy, lh, dn);
+        }
+
+        /// <summary>迷你条速度文本：在固定列内右对齐，超出列宽时自动缩字号（窗口尺寸不变）。</summary>
+        void DrawMiniRate(Graphics g, string text, int x, int colW, int cy, int h, Color c)
+        {
+            Font owned;
+            Font vf = FitValueFont(g, fMono, text, colW, out owned);
+            int tw = TextRenderer.MeasureText(g, text, vf).Width;
+            TextRenderer.DrawText(g, text, vf, new Point(x + colW - tw, cy - vf.Height / 2), c, TextFormatFlags.NoPrefix);
+            if (owned != null) owned.Dispose();
+        }
+
+        /// <summary>迷你条上行(↑)/下行(↓)箭头：实心三角头 + 矩形短杆，
+        /// 与常见流量监控程序字体箭头的形态一致（非线条式）。</summary>
+        static void DrawMiniArrow(Graphics g, bool up, Color c, int x, int cy)
+        {
+            float cx = x + 6f;
+            using (var b = new SolidBrush(c))
+            {
+                if (up)
+                {
+                    // 三角头在上，杆向下
+                    g.FillPolygon(b, new[] { new PointF(cx, cy - 7), new PointF(cx - 4f, cy - 1.5f), new PointF(cx + 4f, cy - 1.5f) });
+                    g.FillRectangle(b, cx - 1.2f, cy - 1.5f, 2.4f, 8f);
+                }
+                else
+                {
+                    // 杆在上，三角头在下
+                    g.FillRectangle(b, cx - 1.2f, cy - 6.5f, 2.4f, 8f);
+                    g.FillPolygon(b, new[] { new PointF(cx, cy + 7), new PointF(cx - 4f, cy + 1.5f), new PointF(cx + 4f, cy + 1.5f) });
+                }
+            }
+        }
+
+        /// <summary>迷你条读取错误时的圆圈叹号。</summary>
+        static void DrawMiniErr(Graphics g, int x, int cy, Color c)
+        {
+            using (var pen = new Pen(c, 1.4f))
+            {
+                g.DrawEllipse(pen, x - 6, cy - 6, 12, 12);
+                g.DrawLine(pen, x, cy - 3.5f, x, cy + 1);
+                using (var b = new SolidBrush(c))
+                    g.FillEllipse(b, x - 1, cy + 2.5f, 2, 2);
+            }
         }
 
         void DrawRow(Graphics g, Row r, ref int y, Rectangle rc)
@@ -702,7 +877,7 @@ namespace HwWidget
         // ---------------------------------------------------------------- 终端行悬停提示
         void CheckHostsHover(Point p)
         {
-            if (hostsRowIdx < 0 || rowTops == null)
+            if (Mini || hostsRowIdx < 0 || rowTops == null)
             {
                 HideHostsTip(); return;
             }
@@ -1014,7 +1189,7 @@ namespace HwWidget
                 dragOff = e.Location;
             }
             smsDownPt = e.Location;
-            smsDownRow = e.Button == MouseButtons.Left ? RowKeyAt(e.Y) : "";
+            smsDownRow = (e.Button == MouseButtons.Left && !Mini) ? RowKeyAt(e.Y) : "";   // 迷你样式无行概念，rowTops 是旧卡片的残留，不能参与命中
             smsMoved = false;
         }
 
@@ -1065,8 +1240,8 @@ namespace HwWidget
         {
             base.OnMouseDoubleClick(e);
             if (e.Button != MouseButtons.Left) return;
-            // 双击终端行 → 弹出全部终端列表；其余位置 → 打开设备管理页。
-            if (RowKeyAt(e.Y) == "hosts") { HideHostsTip(); ShowHosts(); }
+            // 双击终端行 → 弹出全部终端列表；其余位置 → 打开设备管理页。迷你样式不做行命中。
+            if (!Mini && RowKeyAt(e.Y) == "hosts") { HideHostsTip(); ShowHosts(); }
             else Do("manage");
         }
 
@@ -1161,6 +1336,13 @@ namespace HwWidget
                     hintTimer.Stop(); hintTimer.Start();
                     RebuildMenu();
                     Invalidate();
+                    break;
+                case "style":
+                    // 左上角为公共锚点；Relayout 内 KeepOnScreen 负责变尺寸后拉回工作区
+                    cfg.style = cfg.style == "mini" ? "full" : "mini";
+                    cfg.Save();
+                    Relayout();
+                    RebuildMenu();
                     break;
                 case "quit": Quit(); break;
             }
@@ -1261,6 +1443,7 @@ namespace HwWidget
             var t = Add(m, (cfg.topmost ? L.T("menu.topoff") : L.T("menu.topon")), "top"); t.Tag = "top";
             var l = Add(m, (cfg.locked ? L.T("menu.unlock") : L.T("menu.lock")), "lock"); l.Tag = "lock";
             var ct = Add(m, (cfg.clickThrough ? L.T("menu.clickoff") : L.T("menu.clickon")), "click"); ct.Tag = "click";
+            var st = Add(m, (cfg.style == "mini" ? L.T("menu.stylefull") : L.T("menu.style")), "style"); st.Tag = "style";
             m.Items.Add(new ToolStripSeparator());
             Add(m, L.T("menu.quit"), "quit");
             // 底部版本页脚：灰色不可点，版本取自 Application.ProductVersion(=InformationalVersion)
@@ -1331,7 +1514,7 @@ namespace HwWidget
             tray.ContextMenuStrip = menu;
             // WinForms 在首次显示时会按自身 CreateParams 重写扩展样式（不含 WS_EX_TRANSPARENT），
             // 把 OnHandleCreated 里加的穿透位抹掉；延迟到消息循环空档再补应用一次，确保启动后持久生效。
-            BeginInvoke((MethodInvoker)ApplyClickThrough);
+            BeginInvoke((MethodInvoker)delegate { ApplyClickThrough(); ApplyDwmFrame(); });
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)

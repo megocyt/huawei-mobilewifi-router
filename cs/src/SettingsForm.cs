@@ -553,7 +553,7 @@ namespace HwWidget
                 // 不再自绘 Region 圆角（锯齿且无投影），也不再用非默认描边色（会在桌面前形成可见白/黑边）
                 int round = 2;   // DWMWCP_ROUND
                 DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int));   // DWMWA_WINDOW_CORNER_PREFERENCE
-                int border = 1;  // DWMWA_COLOR_DEFAULT：系统默认细边
+                int border = unchecked((int)0xFFFFFFFF);  // DWMWA_COLOR_DEFAULT：系统默认描边
                 DwmSetWindowAttribute(Handle, 34, ref border, sizeof(int));   // DWMWA_BORDER_COLOR
             }
             catch { }

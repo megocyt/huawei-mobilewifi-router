@@ -134,6 +134,10 @@ namespace HwWidget
         /// 每秒重新写入当前时间，时间看起来才会一秒一跳。</summary>
         void OnClockTick(object sender, EventArgs e)
         {
+            // 每秒兜底重应用 DWM 描边属性：BORDER_COLOR=NONE 是易失的合成器状态，会被系统在
+            // 失活/显隐/SetWindowRgn/主题事件等时机重置回默认描边（深色迷你条上表现为左/上 1px 白边），
+            // 丢失后最多 1 秒内自动恢复。仅两次 P/Invoke 调用，成本可忽略。
+            ApplyDwmFrame();
             // 语言实时切换（未保存预览）：重建行（刷新标签文字）并重算标签列宽，避免长译文截断
             if (appliedLang != L.Lang) { Relayout(); return; }
             string now = DateTime.Now.ToString("HH:mm:ss");
@@ -269,7 +273,8 @@ namespace HwWidget
             BuildFonts();
             TopMost = cfg.topmost;
             Opacity = Math.Max(0.25, Math.Min(1.0, cfg.alpha));
-            FormBorderStyle = cfg.borderless ? FormBorderStyle.None : FormBorderStyle.FixedDialog;
+            // 悬浮窗始终无边框：样式切换经由 Region 自绘圆角，保留 FixedDialog 会带出 WS_BORDER 导致白边
+            FormBorderStyle = FormBorderStyle.None;
             BackColor = Parse(cfg.bg);
             ApplyClickThrough();
             Relayout();
@@ -285,6 +290,10 @@ namespace HwWidget
         [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
         [DllImport("user32.dll")] static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
         [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct MARGINS { public int cxLeftWidth, cxRightWidth, cyTopHeight, cyBottomHeight; }
+        [DllImport("dwmapi.dll")] static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS margins);
 
         void ApplyClickThrough()
         {
@@ -320,8 +329,15 @@ namespace HwWidget
             {
                 int round = 1;      // DWMWCP_DONOTROUND
                 DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int));   // DWMWA_WINDOW_CORNER_PREFERENCE
-                int border = 2;     // DWMWA_COLOR_NONE：不画边框
+                // DWMWA_BORDER_COLOR 取值：DEFAULT = 0xFFFFFFFF（系统默认描边），
+                // NONE = 0xFFFFFFFE（不画边框），其余值按 COLORREF 画自定义色。
+                // 注意：之前误写为 2，那是"接近纯黑"的 COLORREF，并未真正禁用边框。
+                int border = unchecked((int)0xFFFFFFFE);   // DWMWA_COLOR_NONE
                 DwmSetWindowAttribute(Handle, 34, ref border, sizeof(int));  // DWMWA_BORDER_COLOR
+                // 将 DWM 帧完全扩展至客户区（margins 全 -1），使 DWM 不再在窗口边缘绘制独立边框，
+                // 与 BORDER_COLOR=NONE 双保险：前者消除 DWM 合成阶段的边框绘制，后者禁止描边颜色叠加。
+                var m = new MARGINS { cxLeftWidth = -1, cxRightWidth = -1, cyTopHeight = -1, cyBottomHeight = -1 };
+                DwmExtendFrameIntoClientArea(Handle, ref m);
             }
             catch { }   // dwmapi 调用失败不影响功能（Win10 以下属性不存在）
         }
@@ -333,14 +349,43 @@ namespace HwWidget
         protected override void OnDeactivate(EventArgs e) { base.OnDeactivate(e); ApplyDwmFrame(); }
         protected override void OnVisibleChanged(EventArgs e) { base.OnVisibleChanged(e); if (Visible) ApplyDwmFrame(); }
 
+        /// <summary>拖动改变位置后 DWM 可能重置描边属性，即时补应用，避免白边在两次 clock 兜底之间闪现。</summary>
+        protected override void OnLocationChanged(EventArgs e) { base.OnLocationChanged(e); ApplyDwmFrame(); }
+
+        /// <summary>句柄创建前即声明为工具窗口（WS_EX_TOOLWINDOW）：系统对工具窗口绘制更少的装饰，
+        /// 从源头降低 DWM 沿边缘补画 1px 亮边的概率；与 ShowInTaskbar=false 效果一致、互为加固。</summary>
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var cp = base.CreateParams;
+                cp.ExStyle |= 0x00000080;              // WS_EX_TOOLWINDOW：工具窗口，系统绘制更少装饰
+                cp.Style  &= ~(0x00800000 | 0x00400000); // 移除 WS_BORDER | WS_DLGFRAME，从 Win32 样式层消除边框
+                return cp;
+            }
+        }
+
         protected override void WndProc(ref Message m)
         {
             const int WM_NCPAINT = 0x0085, WM_NCACTIVATE = 0x0086;
             const int WM_NCUAHDRAWCAPTION = 0x00AE, WM_NCUAHDRAWFRAME = 0x00AF;
+            const int WM_SETTINGCHANGE = 0x001A, WM_WINDOWPOSCHANGED = 0x0047;
+            const int WM_STYLECHANGED = 0x0088, WM_DPICHANGED = 0x02E0;
             if (m.Msg == WM_NCUAHDRAWCAPTION || m.Msg == WM_NCUAHDRAWFRAME) { m.Result = IntPtr.Zero; return; }
             if (m.Msg == WM_NCACTIVATE) { m.Result = (IntPtr)1; return; }
+            // 完全吞掉 WM_NCPAINT：不交给 base，阻止系统在非客户区沿窗口边缘补画 1px 亮边
             if (m.Msg == WM_NCPAINT) { m.Result = IntPtr.Zero; return; }
+
             base.WndProc(ref m);
+
+            // DWM 描边属性是易失的合成器状态：主题变更(WM_SETTINGCHANGE)、DPI 变更(WM_DPICHANGED)、
+            // 样式改写(WM_STYLECHANGED，含 TopMost/扩展样式切换)、窗口位置/尺寸变更(WM_WINDOWPOSCHANGED，
+            // 覆盖一切 SetWindowPos 与拖动)之后，系统都可能把 BORDER_COLOR 重置回默认描边（深色迷你条上
+            // 表现为左/上 1px 白边）。在这些系统消息处理完毕后立即补应用，把白边窗口期压缩到单条消息内，
+            // 不必等 clockTimer 下一秒兜底。WM_NCCALCSIZE(0x0083) 不拦，以免影响客户区计算。
+            if (m.Msg == WM_SETTINGCHANGE || m.Msg == WM_WINDOWPOSCHANGED
+                || m.Msg == WM_STYLECHANGED || m.Msg == WM_DPICHANGED)
+                ApplyDwmFrame();
         }
 
         static Color Parse(string hex)
@@ -1350,8 +1395,7 @@ namespace HwWidget
 
         void ShowSettings()
         {
-            // 防止重入：ShowDialog 开时内部仍会派发 tray 事件，不守卫会弹 N 个设置窗。
-            // 已存在时直接激活（处理“双击无反应”的错觉，因为可能已开但被置顶窗口遮位）。
+            // 防止重入：已存在时直接激活（处理“双击无反应”的错觉，因为可能已开但被置顶窗口遮位）。
             if (settingsForm != null && !settingsForm.IsDisposed)
             {
                 if (settingsForm.WindowState == FormWindowState.Minimized)
@@ -1360,46 +1404,45 @@ namespace HwWidget
                 settingsForm.BringToFront();
                 return;
             }
-            using (var f = new SettingsForm(cfg))
+            var f = new SettingsForm(cfg);
+            settingsForm = f;
+            // 非模态打开：设置窗存在期间悬浮窗仍可自由拖动（模态消息循环会吞掉悬浮窗的鼠标消息）。
+            // 不传 owner：WidgetForm 在 toggle 隐藏后作为 owner 会造成子窗焦点错乱，
+            // 表现为“设置窗不可点击”；SettingsForm 自身 TopMost，不会被悬浮窗遮挡后找不到。
+            f.FormClosed += delegate
             {
-                settingsForm = f;
-                int hr;
-                try
+                settingsForm = null;
+                DialogResult dr = f.DialogResult;   // 释放前先取关闭结果（OK=保存，其余=取消/直关）
+                f.Dispose();
+                if (dr != DialogResult.OK) return;
+                cfg = f.Result;
+                L.Lang = cfg.language;
+                // 设备不可达时 devLock 可能被 stuck 的 Sample 长持，这里不能直接 lock，
+                // 否则设置面板确定后 UI 会假死数十秒。抢不到锁时把 Logout+换 dev 排入后台。
+                bool taken = false;
+                try { taken = Monitor.TryEnter(devLock, 300); } catch { }
+                if (taken)
                 {
-                    // 不传 owner：WidgetForm 在 toggle 隐藏后作为 owner 会造成子窗焦点错乱，
-                    // 表现为“设置窗不可点击”。无 owner 的 ShowDialog 仍为应用内部模态。
-                    hr = (int)f.ShowDialog();
+                    try { dev.Logout(); dev = NewDevice(); }
+                    finally { Monitor.Exit(devLock); }
                 }
-                finally { settingsForm = null; }
-                if ((DialogResult)hr == DialogResult.OK)
+                else
                 {
-                    cfg = f.Result;
-                    L.Lang = cfg.language;
-                    // 设备不可达时 devLock 可能被 stuck 的 Sample 长持，这里不能直接 lock，
-                    // 否则设置面板确定后 UI 会假死数十秒。抢不到锁时把 Logout+换 dev 排入后台。
-                    bool taken = false;
-                    try { taken = Monitor.TryEnter(devLock, 300); } catch { }
-                    if (taken)
+                    var old = dev;
+                    var nd = NewDevice();
+                    ThreadPool.QueueUserWorkItem(delegate
                     {
-                        try { dev.Logout(); dev = NewDevice(); }
-                        finally { Monitor.Exit(devLock); }
-                    }
-                    else
-                    {
-                        var old = dev;
-                        var nd = NewDevice();
-                        ThreadPool.QueueUserWorkItem(delegate
-                        {
-                            lock (devLock) { try { old.Logout(); } catch { } dev = nd; }
-                            wake.Set();
-                        });
-                    }
-                    localIp = "";
-                    ApplyChrome();
-                    RebuildMenu();
-                    wake.Set();
+                        lock (devLock) { try { old.Logout(); } catch { } dev = nd; }
+                        wake.Set();
+                    });
                 }
-            }
+                localIp = "";
+                ApplyChrome();
+                RebuildMenu();
+                wake.Set();
+            };
+            f.Show();
+            f.Activate();
         }
 
         void Quit()
@@ -1531,6 +1574,8 @@ namespace HwWidget
                 if (Region != null) Region.Dispose();
                 Region = new Region(p);
             }
+            // 尺寸变化会触发 DWM 重新合成，可能重置描边属性；重绘 Region 后即时补应用
+            ApplyDwmFrame();
         }
     }
 

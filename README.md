@@ -6,13 +6,13 @@
 
 当前版本：`0.1.0`
 
-同一套设备协议提供两种实现，**共用同一份配置文件**，可互相接管：
+同一套设备协议提供三种实现，**共用同一份配置文件**，可互相接管：
 
-| | Python 版（`python/`） | C# 版（`cs/`） |
-|---|---|---|
-| 依赖 | 仅需 Python 3 标准库（tkinter + ctypes） | 仅需 Windows 自带 .NET Framework 4.8，编译后单 exe 零依赖 |
-| 界面 | tkinter 暗色悬浮窗 | WinForms + GDI+ 全自绘科技感卡片 |
-| 产物 | `pythonw hw_widget.pyw` 直接运行 | `HwWidget.exe` 双击运行 |
+| | Python 版（`python/`） | C# 版（`cs/`） | Qt 版（`qt/`） |
+|---|---|---|---|
+| 依赖 | 仅需 Python 3 标准库（tkinter + ctypes） | 仅需 Windows 自带 .NET Framework 4.8，编译后单 exe 零依赖 | 需 Qt 6.2+（C++17），`build.ps1` 自动 `windeployqt` 收集运行库 |
+| 界面 | tkinter 暗色悬浮窗 | WinForms + GDI+ 全自绘科技感卡片 | Qt Widgets + QPainter 全自绘，1:1 复刻 C# 版 |
+| 产物 | `pythonw hw_widget.pyw` 直接运行 | `HwWidget.exe` 双击运行 | `HwWidgetQt.exe` 双击运行（`qt/build/`） |
 
 ## 功能特性
 
@@ -43,6 +43,24 @@ huawei/
 │   │   └── Program.cs      #     入口：单实例互斥、DPI、托盘图标代码绘制
 │   └── build/              #   构建产物目录（不入库）
 │       └── HwWidget.exe    #     编译产物
+├── qt/                     # Qt 版（C++17 + Qt 6 Widgets）
+│   ├── CMakeLists.txt      #   从 ../VERSION 生成 version.h 与 app.rc
+│   ├── build.ps1           #   一键定位 Qt → cmake -G Ninja → windeployqt
+│   ├── res/                #   lang.json（170 词条 × 6 语言）、图标、qrc/rc 模板
+│   └── src/
+│       ├── device.*        #     设备协议客户端（SCRAM 登录 / 采样 / 短信）
+│       ├── cfg.*           #     config.json 读写（键名与 cs/src/Config.cs 一致）
+│       ├── lang.*          #     六语言词条（运行时加载 res/lang.json）
+│       ├── format.*        #     字节 / 速率 / 时长换算
+│       ├── paintutil.*     #     配色、圆角、行内图标（信号柱 / 电池 / 眼睛）绘制
+│       ├── widgetwindow.*  #     悬浮卡片 + 迷你条 + 托盘 + 采集线程
+│       ├── lightwindow.*   #     子窗公共基类：自绘标题栏 + Win11 圆角边框
+│       ├── settingsdialog.*#     设置窗口（四页签 + 样式缩略图 + 子页）
+│       ├── hostsdialog.*   #     终端窗（16 列，可排序）
+│       ├── smsdialog.*     #     短信窗（分页 / 标记已读 / 删除）
+│       ├── hostspopup.*    #     终端行悬停浮层（在线设备清单）
+│       ├── traymenu.*      #     托盘图标与暗色右键菜单
+│       └── main.cpp        #     入口：单实例、`--once` 协议自检、`--panel` 直达子窗
 └── screenshots/            # 开发验证截图（不入库）
 ```
 
@@ -65,9 +83,26 @@ powershell -ExecutionPolicy Bypass -File cs/build.ps1
 
 编译器为 Windows 自带的 `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`，无需安装任何 SDK 或运行时。
 
+### Qt 版
+
+需要 Qt 6.2+ 套件（MinGW 或 MSVC 均可），`build.ps1` 会按 `-QtDir` 参数 → `$env:QTDIR` → `C:\Qt\6.*` → MSYS2 `mingw64` 顺序自动定位：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File qt/build.ps1                        # 自动找 Qt
+powershell -ExecutionPolicy Bypass -File qt/build.ps1 -QtDir C:\Qt\6.8.1\mingw_64
+powershell -ExecutionPolicy Bypass -File qt/build.ps1 -Clean -Tag           # 清理重编 + 打 tag
+```
+
+产物 `qt/build/HwWidgetQt.exe`（已含 Qt 运行库，可直接拷走）。另有协议自检入口，无需 GUI 即可校验设备连通性：
+
+```powershell
+.\qt\build\HwWidgetQt.exe --once      # 打印一次 snapshot JSON（字段与 python/hw_status.py 一致）
+.\qt\build\HwWidgetQt.exe --panel hosts   # 启动后直接打开终端窗（settings / sms 同理，调试用）
+```
+
 ## 配置
 
-配置文件：`%APPDATA%\HWiFiWidget\config.json`（两版通用，键名完全一致）。
+配置文件：`%APPDATA%\HWiFiWidget\config.json`（三版通用，键名完全一致）。
 
 首次运行自动使用默认值：设备 `192.168.8.1`、用户 `admin`；密码从环境变量 `HWIFI_PASSWORD`、配置文件或设置窗口（托盘双击 / 悬浮窗右键）获取，外观颜色、字号、透明度与显示项均可在设置中调整。
 

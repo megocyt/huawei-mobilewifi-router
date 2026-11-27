@@ -9,6 +9,12 @@ cs/build/AssemblyInfo.cs
 cs/obj/
 cs/bin/
 
+# Qt 编译产物（qt/build.ps1 一键重新生成，不入库）
+qt/build/
+qt/CMakeFiles/
+qt/**/*.user
+qt/.qt/
+
 # 调试过程截图与临时脚本
 screenshots/
 _shot_*.png

@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file alias="lang.json">lang.json</file>
+        <file alias="HwWidget.ico">HwWidget.ico</file>
+    </qresource>
+</RCC>

@@ -12,7 +12,7 @@
 |---|---|---|---|
 | 依赖 | 仅需 Python 3 标准库（tkinter + ctypes） | 仅需 Windows 自带 .NET Framework 4.8，编译后单 exe 零依赖 | 需 Qt 6.2+（C++17），`build.ps1` 自动 `windeployqt` 收集运行库 |
 | 界面 | tkinter 暗色悬浮窗 | WinForms + GDI+ 全自绘科技感卡片 | Qt Widgets + QPainter 全自绘，1:1 复刻 C# 版 |
-| 产物 | `pythonw hw_widget.pyw` 直接运行 | `HwWidget.exe` 双击运行 | `HwWidgetQt.exe` 双击运行（`qt/build/`） |
+| 产物 | `pythonw hw_widget.pyw` 直接运行 | `HwWidget.exe` 双击运行 | `HwWidgetQt.exe` 双击运行（`qt/build/`），`build.ps1` 同时产出 `qt/dist/HwWidgetQt-v<版本>-win64.zip` |
 
 ## 功能特性
 
@@ -45,7 +45,8 @@ huawei/
 │       └── HwWidget.exe    #     编译产物
 ├── qt/                     # Qt 版（C++17 + Qt 6 Widgets）
 │   ├── CMakeLists.txt      #   从 ../VERSION 生成 version.h 与 app.rc
-│   ├── build.ps1           #   一键定位 Qt → cmake -G Ninja → windeployqt
+│   ├── build.ps1           #   一键定位 Qt → cmake -G Ninja → windeployqt → 打包 zip
+│   ├── build-qtstatic.ps1  #   可选：从源码编静态 Qt（单文件实验用，默认不参与构建）
 │   ├── res/                #   lang.json（170 词条 × 6 语言）、图标、qrc/rc 模板
 │   └── src/
 │       ├── device.*        #     设备协议客户端（SCRAM 登录 / 采样 / 短信）
@@ -88,12 +89,15 @@ powershell -ExecutionPolicy Bypass -File cs/build.ps1
 需要 Qt 6.2+ 套件（MinGW 或 MSVC 均可），`build.ps1` 会按 `-QtDir` 参数 → `$env:QTDIR` → `C:\Qt\6.*` → MSYS2 `mingw64` 顺序自动定位：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File qt/build.ps1                        # 自动找 Qt
+powershell -ExecutionPolicy Bypass -File qt/build.ps1                        # 自动找 Qt + 打包 zip
 powershell -ExecutionPolicy Bypass -File qt/build.ps1 -QtDir C:\Qt\6.8.1\mingw_64
 powershell -ExecutionPolicy Bypass -File qt/build.ps1 -Clean -Tag           # 清理重编 + 打 tag
+powershell -ExecutionPolicy Bypass -File qt/build.ps1 -NoZip                # 只编译，不生成 zip
 ```
 
-产物 `qt/build/HwWidgetQt.exe`（已含 Qt 运行库，可直接拷走）。另有协议自检入口，无需 GUI 即可校验设备连通性：
+产物 `qt/build/HwWidgetQt.exe`（已含 Qt 运行库，可直接拷走）；同时自动生成发布包
+`qt/dist/HwWidgetQt-v<版本>-win64.zip`（约 40 个文件 / 32 MB，含 exe、Qt DLL、gcc 运行时与
+`platforms`/`styles`/`tls` 等插件目录，解压后是一层 `HwWidgetQt\` 目录，换机直接双击运行）。另有协议自检入口，无需 GUI 即可校验设备连通性：
 
 ```powershell
 .\qt\build\HwWidgetQt.exe --once      # 打印一次 snapshot JSON（字段与 python/hw_status.py 一致）
@@ -120,6 +124,7 @@ powershell -ExecutionPolicy Bypass -File qt/build.ps1 -Clean -Tag           # �
 版本号单一真源为仓库根 `VERSION` 文件（形如 `0.1.0`）。执行 `build.ps1` 时会自动：
 
 - 依据 `VERSION` 生成 `cs/build/AssemblyInfo.cs`，把版本注入 EXE 文件属性（右键→属性→详细信息）；
+- Qt 版同理生成 `version.h` 与 `app.rc`，并把版本写进发布包名 `qt/dist/HwWidgetQt-v<版本>-win64.zip`；
 - 同步本 README 顶部的版本徽标与「当前版本」行；
 - 悬浮窗托盘菜单底部的「版本」页脚读取 `Application.ProductVersion`，与上述同源。
 

@@ -1,11 +1,15 @@
-﻿# Qt 版构建脚本：定位 Qt 套件 -> cmake -G Ninja 配置 -> 编译 -> windeployqt 收集运行库。
+﻿# Qt 版构建脚本：定位 Qt 套件 -> cmake -G Ninja 配置 -> 编译 -> windeployqt 收集运行库 -> 打包 zip。
 # 版本号单一真源仍是仓库根 VERSION（CMakeLists.txt 读出后生成 version.h / app.rc），
-# 构建成功后同步 README 版本徽标。可选 -Tag：为该版本创建本地 git 附注标签。
+# 构建成功后同步 README 版本徽标。可选 -Tag：为该版本创建本地 git 附注标签；-NoZip 跳过打包。
 param(
     [string]$QtDir,
     [string]$BuildType = 'Release',
     [switch]$Clean,
-    [switch]$Tag
+    [switch]$Tag,
+    # 静态构建：链接自建的静态 Qt（默认 E:\tools\qt6-static），产出不依赖任何 DLL 的单文件 exe
+    [switch]$Static,
+    # 只编译，不生成 qt\dist\HwWidgetQt-v<版本>-win64.zip
+    [switch]$NoZip
 )
 $ErrorActionPreference = 'Stop'
 
@@ -59,9 +63,48 @@ function Copy-MingwDeps {
     }
 }
 
+# 把产物目录里真正需要分发的东西压成 zip：exe / dll / manifest 加上 windeployqt 生成的
+# 插件目录（platforms、styles、imageformats、tls 等），跳过 CMake 与 ninja 的中间产物。
+# zip 内保留一层 HwWidgetQt\ 目录，解压不会把几十个文件炸在当前目录。
+function New-ReleaseZip {
+    param([string]$Build, [string]$OutDir, [string]$Version)
+    $stageRoot = Join-Path $OutDir 'stage'
+    $stage = Join-Path $stageRoot 'HwWidgetQt'
+    if (Test-Path $stageRoot) { Remove-Item -Recurse -Force $stageRoot }
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+
+    Get-ChildItem -Path $Build -File |
+        Where-Object { $_.Extension -in '.exe', '.dll' -or $_.Name -like '*.manifest' } |
+        Copy-Item -Destination $stage -Force
+    Get-ChildItem -Path $Build -Directory |
+        Where-Object { $_.Name -ne 'CMakeFiles' -and $_.Name -notlike '*_autogen*' -and -not $_.Name.StartsWith('.') } |
+        Copy-Item -Destination $stage -Recurse -Force
+
+    $zip = Join-Path $OutDir "HwWidgetQt-v$Version-win64.zip"
+    if (Test-Path $zip) { Remove-Item $zip -Force }
+    Compress-Archive -Path $stage -DestinationPath $zip -CompressionLevel Optimal
+
+    $n = (Get-ChildItem -Path $stage -Recurse -File | Measure-Object).Count
+    $raw = (Get-ChildItem -Path $stage -Recurse -File | Measure-Object -Property Length -Sum).Sum
+    Remove-Item -Recurse -Force $stageRoot
+    Write-Host ("打包 -> $zip（$n 个文件，原始 {0} MB / 压缩 {1} MB）" -f
+        [math]::Round($raw / 1MB, 1), [math]::Round((Get-Item $zip).Length / 1MB, 1))
+}
+
 # 依次尝试：-QtDir 参数 -> $env:QTDIR -> C:\Qt\6.*\mingw_64 -> C:\Qt\6.*\msvc*_64 -> MSYS2 mingw64
 function Resolve-QtKit {
-    param([string]$Explicit)
+    param([string]$Explicit, [switch]$Static)
+    # 静态套件不是官方安装包（没有 qmake6.exe 也无所谓），用 Qt6Config.cmake 判定
+    if ($Static) {
+        $staticCands = @()
+        if ($Explicit) { $staticCands += $Explicit }
+        if ($env:QTSTATICDIR) { $staticCands += $env:QTSTATICDIR }
+        $staticCands += 'E:\tools\qt6-static'
+        foreach ($c in $staticCands) {
+            if ($c -and (Test-Path (Join-Path $c 'lib\cmake\Qt6\Qt6Config.cmake'))) { return $c }
+        }
+        return $null
+    }
     $cands = @()
     if ($Explicit) { $cands += $Explicit }
     if ($env:QTDIR) { $cands += $env:QTDIR }
@@ -81,10 +124,11 @@ function Resolve-QtKit {
 try {
     $root  = Split-Path -Parent $PSScriptRoot           # qt -> 仓库根
     $srcQ  = $PSScriptRoot                              # 源码根（含 CMakeLists.txt）
-    $build = Join-Path $srcQ 'build'
+    $build = Join-Path $srcQ $(if ($Static) { 'build-static' } else { 'build' })
 
-    $kit = Resolve-QtKit -Explicit $QtDir
+    $kit = Resolve-QtKit -Explicit $QtDir -Static:$Static
     if (-not $kit) {
+        if ($Static) { throw "未找到静态 Qt 6。请先运行 qt\build-qtstatic.ps1 构建，或用 -QtDir <路径> 指定。" }
         throw "未找到 Qt 6 套件。请用 -QtDir <路径> 指定（例如 C:\Qt\6.8.1\mingw_64），或设置 `$env:QTDIR。"
     }
     $kitBin = Join-Path $kit 'bin'
@@ -96,7 +140,14 @@ try {
 
     # ---- 工具链路径：优先用套件自带（MSYS2 布局），否则回退 PATH ----
     $msys = Split-Path -Parent (Split-Path -Parent $kit)     # E:\tools\msys64
+    # 静态套件在 E:\tools\qt6-static 下，推不出 msys 根，这里直接锚定 mingw64 工具链
+    if (-not (Test-Path (Join-Path $msys 'mingw64\bin\g++.exe')) -and
+        (Test-Path 'E:\tools\msys64\mingw64\bin\g++.exe')) {
+        $msys = 'E:\tools\msys64'
+    }
+    $mingwBin = Join-Path $msys 'mingw64\bin'
     $env:Path = "$kitBin;" + $env:Path
+    if (Test-Path (Join-Path $mingwBin 'g++.exe')) { $env:Path = "$mingwBin;" + $env:Path }
     if (Test-Path (Join-Path $msys 'usr\bin\cmake.exe')) {
         $env:Path = (Join-Path $msys 'usr\bin') + ';' + $env:Path
     }
@@ -124,6 +175,7 @@ try {
     $cfgArgs = @('-S', $srcQ, '-B', $build, "-DCMAKE_BUILD_TYPE=$BuildType", "-DCMAKE_PREFIX_PATH=$kit")
     if ($ninjaExe) { $cfgArgs += @('-G', 'Ninja', "-DCMAKE_MAKE_PROGRAM=$ninjaExe") }
     $gxx = Join-Path $kitBin 'g++.exe'
+    if (-not (Test-Path $gxx)) { $gxx = Join-Path $mingwBin 'g++.exe' }
     if (Test-Path $gxx) { $cfgArgs += "-DCMAKE_CXX_COMPILER=$gxx" }
     & $cmake.Source @cfgArgs
     if ($LASTEXITCODE -ne 0) { throw "cmake 配置失败: $LASTEXITCODE" }
@@ -136,21 +188,48 @@ try {
     if (-not (Test-Path $exe)) { throw "未找到产物 $exe" }
 
     # ---- 收集运行库（windeployqt + 递归补齐依赖 DLL）----
-    $wdq = Join-Path $kitBin 'windeployqt.exe'
-    if (Test-Path $wdq) {
-        # windeployqt 会向 stderr 写“缺少 dxcompiler.dll”之类的提示，
-        # 统一收进 stdout 并在局部放宽 ErrorActionPreference，避免被当成致命错误
-        $ea2 = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        try { (& $wdq --release --no-translations --no-system-d3d-compiler --no-opengl-sw $exe 2>&1) | Out-Host }
-        finally { $ErrorActionPreference = $ea2 }
-        if ($LASTEXITCODE -ne 0) { Write-Host "windeployqt 返回 $LASTEXITCODE（可忽略）" }
+    if ($Static) {
+        # 静态构建：Qt 与 gcc 运行时已编进 exe，不再拷贝任何 DLL；
+        # 这里用导入表反查一遍，确认真的没有指向套件的 DLL
+        Write-Host '静态构建：跳过 windeployqt 与 DLL 收集'
+        $objdump = Join-Path $mingwBin 'objdump.exe'
+        if (Test-Path $objdump) {
+            $dlls = @(& $objdump -p $exe 2>$null |
+                     Select-String 'DLL Name:\s*(\S+)' |
+                     ForEach-Object { $_.Matches[0].Groups[1].Value } | Sort-Object -Unique)
+            $extra = @($dlls | Where-Object {
+                (Test-Path (Join-Path $mingwBin $_)) -or (Test-Path (Join-Path 'E:\tools\msys64\mingw64\bin' $_))
+            })
+            if ($extra.Count -gt 0) {
+                Write-Host "警告：仍依赖非系统 DLL -> $($extra -join ', ')"
+            } else {
+                Write-Host "导入表仅含系统 DLL：$($dlls -join ', ')"
+            }
+        }
     } else {
-        Write-Host "未找到 windeployqt，跳过运行库收集（需自行保证 Qt DLL 可用）"
+        $wdq = Join-Path $kitBin 'windeployqt.exe'
+        if (Test-Path $wdq) {
+            # windeployqt 会向 stderr 写“缺少 dxcompiler.dll”之类的提示，
+            # 统一收进 stdout 并在局部放宽 ErrorActionPreference，避免被当成致命错误
+            $ea2 = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try { (& $wdq --release --no-translations --no-system-d3d-compiler --no-opengl-sw $exe 2>&1) | Out-Host }
+            finally { $ErrorActionPreference = $ea2 }
+            if ($LASTEXITCODE -ne 0) { Write-Host "windeployqt 返回 $LASTEXITCODE（可忽略）" }
+        } else {
+            Write-Host "未找到 windeployqt，跳过运行库收集（需自行保证 Qt DLL 可用）"
+        }
+        # MSYS2 的 Qt 依赖 gcc 运行时与 ICU/zlib/zstd 等 mingw64 DLL，windeployqt 不会拷，
+        # 这里按 PE 导入表递归补齐（套件里找不到的就是系统 DLL，直接跳过）
+        Copy-MingwDeps -Dir $build -KitBin $kitBin
     }
-    # MSYS2 的 Qt 依赖 gcc 运行时与 ICU/zlib/zstd 等 mingw64 DLL，windeployqt 不会拷，
-    # 这里按 PE 导入表递归补齐（套件里找不到的就是系统 DLL，直接跳过）
-    Copy-MingwDeps -Dir $build -KitBin $kitBin
+
+    # ---- 打包 zip 发布包 ----
+    if ($NoZip) {
+        Write-Host '跳过打包（-NoZip）'
+    } else {
+        New-ReleaseZip -Build $build -OutDir (Join-Path $srcQ 'dist') -Version $ver
+    }
 
     # ---- 同步 README 版本徽标与“当前版本”文字 ----
     $readme = Join-Path $root 'README.md'
@@ -178,7 +257,7 @@ try {
         } finally { $ErrorActionPreference = $ea; Pop-Location }
     }
 
-    Write-Host "OK (v$ver) -> $exe"
+    Write-Host "OK (v$ver)$(if ($Static) { ' [static]' }) -> $exe"
     $script:buildOk = $true
 }
 catch {

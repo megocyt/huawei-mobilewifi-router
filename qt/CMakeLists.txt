@@ -58,6 +58,19 @@ if(WIN32)
     target_link_libraries(HwWidgetQt PRIVATE dwmapi)
 endif()
 
+# ---------------------------------------------------------------- 静态构建的插件导入
+# 静态链接时平台/样式/TLS/图标等插件不会被自动带上，必须在链接期显式导入，
+# 否则单文件 exe 启动会报 "no Qt platform plugin could be initialized"。
+if(NOT QT6_IS_SHARED_LIBS)
+    qt_import_plugins(HwWidgetQt
+        INCLUDE_BY_TYPE platforms QWindowsIntegrationPlugin
+        INCLUDE_BY_TYPE styles QModernWindowsStylePlugin
+        INCLUDE_BY_TYPE tls QSchannelBackendPlugin
+        INCLUDE_BY_TYPE networkinformation QNLMNIPlugin
+        INCLUDE_BY_TYPE imageformats QICOPlugin
+    )
+endif()
+
 if(MSVC)
     # 源码含中文/俄文/日文等字面量，MSVC 默认按本地代码页解析会乱码
     target_compile_options(HwWidgetQt PRIVATE /utf-8)

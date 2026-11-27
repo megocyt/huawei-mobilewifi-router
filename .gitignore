@@ -11,6 +11,9 @@ cs/bin/
 
 # Qt 编译产物（qt/build.ps1 一键重新生成，不入库）
 qt/build/
+# -Static 的产物目录，以及 build.ps1 生成的 zip 发布包
+qt/build-static/
+qt/dist/
 qt/CMakeFiles/
 qt/**/*.user
 qt/.qt/

@@ -26,9 +26,6 @@ struct Pal
 QColor blend(const QColor &a, const QColor &b, double t);
 QPainterPath roundRectPath(const QRectF &r, double rad);
 
-/// 文字放不下时逐步缩小字号（最多降 3pt 且 ≥8pt，与 cs 的 FitValueFont 一致）
-QFont fitFont(const QFont &base, const QString &text, int maxW);
-
 /// 段弧 WiFi 图标（conn/err 行与托盘图标共用）
 void drawWifiArcs(QPainter &p, double cx, double cy, const QColor &c);
 /// 信号柱（底部对齐，按点亮数着色）

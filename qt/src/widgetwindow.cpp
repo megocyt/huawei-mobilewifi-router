@@ -311,8 +311,7 @@ void WidgetWindow::notifyResample()
 void WidgetWindow::buildFonts()
 {
     const int size = qMax(8, cfg_.fontSize);
-    fTitle_ = QFont(cfg_.fontFam);
-    fTitle_.setPointSizeF(qMax(7.5, double(size) - 3.0));
+    // 卡片内所有文字（标题、标签、数值、徽章）共用同一字号，绘制时不再按宽度缩字
     fLabel_ = QFont(cfg_.fontFam);
     fLabel_.setPointSizeF(size);
     fValue_ = QFont(cfg_.fontFam);
@@ -562,8 +561,13 @@ void WidgetWindow::relayout()
 void WidgetWindow::relayoutMini()
 {
     hideHostsTip();
-    if (width() != MiniW || height() != MiniH) {
-        resize(MiniW, MiniH);
+    // 迷你条列宽按当前字号下最宽的速率串（"888.8 KB/s"）算出：宽度只跟字号走、
+    // 不跟数据走，既保持固定尺寸不抖动，也不会把 "KB/s" 截成省略号
+    const QFontMetrics fm(fMono_);
+    miniColW_ = qMax(MiniColW, fm.horizontalAdvance(QStringLiteral("888.8 KB/s")) + 2);
+    const int w = qMax(MiniW, 2 * miniColW_ + 78);
+    if (width() != w || height() != MiniH) {
+        resize(w, MiniH);
         keepOnScreen();
     }
 }
@@ -641,14 +645,14 @@ void WidgetWindow::paintFull(QPainter &p)
                    Qt::AlignLeft | Qt::AlignVCenter, title);
 
         const QString badge = haveSnap_ ? snap_.net : QStringLiteral("-");
-        const QFontMetrics ftm(fTitle_);
+        const QFontMetrics ftm(fValue_);
         const int bw = ftm.horizontalAdvance(badge);
         const int bh = ftm.height() + 6;
         const QRectF br(rc.right() - Pad - bw - 14, y, bw + 14, bh);
         p.setPen(QPen(blend(pal.bg, pal.accent, 0.6), 1));
         p.setBrush(blend(pal.bg, pal.accent, 0.12));
         p.drawPath(roundRectPath(br, 4));
-        p.setFont(fTitle_);
+        p.setFont(fValue_);
         p.setPen(pal.accent);
         p.drawText(br.adjusted(7, 3, 0, 0), Qt::AlignLeft | Qt::AlignVCenter, badge);
 
@@ -675,10 +679,14 @@ void WidgetWindow::drawRow(QPainter &p, const Row &r, int &y, const QRect &rc)
     p.setPen(pal.muted());
     p.drawText(QRect(lx, y, labelW_, rowH_), Qt::AlignLeft | Qt::AlignVCenter, r.label);
 
-    const int tailW = r.kind == Plan ? 46 : (r.eye ? 22 : 0);
+    // 套餐百分比尾巴按当前字号实测宽度，避免同一字号下与数值贴在一起
+    const int tailW = r.kind == Plan
+                          ? QFontMetrics(fValue_).horizontalAdvance(QStringLiteral("888.8%")) + 8
+                          : (r.eye ? 22 : 0);
     const int vx = lx + labelW_ + 8;
     const QRect vRect(vx, y, right - tailW - vx, rowH_);
-    const QFont vf = fitFont(r.mono ? fMono_ : fValue_, r.value, vRect.width());
+    // 字号与其它行一致，放不下时只做省略号截断，不缩字号
+    const QFont &vf = r.mono ? fMono_ : fValue_;
     p.setFont(vf);
     p.setPen(r.color);
     const QString shown = QFontMetrics(vf).elidedText(r.value, Qt::ElideRight, vRect.width());
@@ -690,7 +698,7 @@ void WidgetWindow::drawRow(QPainter &p, const Row &r, int &y, const QRect &rc)
     }
 
     if (r.kind == Plan) {
-        p.setFont(fTitle_);
+        p.setFont(fValue_);
         p.setPen(r.color);
         p.drawText(QRect(right - tailW, y, tailW, rowH_), Qt::AlignRight | Qt::AlignVCenter, r.tail);
         const int ty = y + rowH_ + 4;
@@ -739,10 +747,9 @@ void WidgetWindow::paintMini(QPainter &p)
     if (!has && !err_.isEmpty()) {
         drawMiniErr(p, 16, cy, pal.bad);
         const QString t = trunc(err_, 14);
-        const QFont vf = fitFont(fValue_, t, w - 30 - 10);
-        p.setFont(vf);
+        p.setFont(fValue_);
         p.setPen(pal.bad);
-        p.drawText(QPointF(28, cy + QFontMetrics(vf).ascent() / 2.0 - 1), t);
+        p.drawText(QPointF(28, cy + QFontMetrics(fValue_).ascent() / 2.0 - 1), t);
         return;
     }
 
@@ -770,22 +777,23 @@ void WidgetWindow::paintMini(QPainter &p)
     drawMiniArrow(p, true, up, aX, cy);
     {
         const QString t = has ? humanRate(double(snap_.rateUp)) : QStringLiteral("-");
-        const QFont vf = fitFont(fMono_, t, MiniColW);
-        const int tw = QFontMetrics(vf).horizontalAdvance(t);
-        p.setFont(vf);
+        const QString shown = QFontMetrics(fMono_).elidedText(t, Qt::ElideRight, miniColW_);
+        const int tw = QFontMetrics(fMono_).horizontalAdvance(shown);
+        p.setFont(fMono_);
         p.setPen(up);
-        p.drawText(QPointF(aX + 14 + MiniColW - tw, cy + QFontMetrics(vf).ascent() / 2.0 - 1), t);
+        p.drawText(QPointF(aX + 14 + miniColW_ - tw, cy + QFontMetrics(fMono_).ascent() / 2.0 - 1),
+                   shown);
     }
-    drawMiniArrow(p, false, dn, aX + 14 + MiniColW + 6, cy);
+    drawMiniArrow(p, false, dn, aX + 14 + miniColW_ + 6, cy);
     {
         const QString t = has ? humanRate(double(snap_.rateDown)) : QStringLiteral("-");
-        const QFont vf = fitFont(fMono_, t, MiniColW);
-        const int tw = QFontMetrics(vf).horizontalAdvance(t);
-        p.setFont(vf);
+        const QString shown = QFontMetrics(fMono_).elidedText(t, Qt::ElideRight, miniColW_);
+        const int tw = QFontMetrics(fMono_).horizontalAdvance(shown);
+        p.setFont(fMono_);
         p.setPen(dn);
-        p.drawText(QPointF(aX + 14 + MiniColW + 20 + MiniColW - tw,
-                           cy + QFontMetrics(vf).ascent() / 2.0 - 1),
-                   t);
+        p.drawText(QPointF(aX + 14 + miniColW_ + 20 + miniColW_ - tw,
+                           cy + QFontMetrics(fMono_).ascent() / 2.0 - 1),
+                   shown);
     }
 }
 

@@ -31,6 +31,26 @@ QColor editBorder() { return QColor(160, 160, 160); }
 QColor groupBorder() { return QColor(214, 214, 214); }
 QColor text() { return QColor(32, 32, 32); }
 QColor gray() { return QColor(120, 120, 120); }
+
+QString flatBtnQss()
+{
+    return QStringLiteral(
+        "QPushButton { background:#FBFBFB; border:1px solid #C8C8C8; border-radius:3px;"
+        " color:#333333; padding:2px 8px; }"
+        "QPushButton:hover { background:#F0F6FC; border-color:#7EB4E8; }"
+        "QPushButton:pressed { background:#E5F1FB; }"
+        "QPushButton:disabled { color:#9A9A9A; border-color:#DCDCDC; background:#F7F7F7; }");
+}
+
+QString primaryBtnQss()
+{
+    return QStringLiteral(
+        "QPushButton { background:#0078D4; color:white; border:1px solid #0069BD; border-radius:3px;"
+        " padding:2px 8px; }"
+        "QPushButton:hover { background:#1A86D9; }"
+        "QPushButton:pressed { background:#0069BD; }"
+        "QPushButton:disabled { background:#B7D9F2; border-color:#A6CBE9; }");
+}
 } // namespace Light
 
 LightWindow::LightWindow(QWidget *parent) : QDialog(parent, Qt::Window | Qt::FramelessWindowHint)

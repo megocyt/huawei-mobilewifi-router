@@ -1,7 +1,5 @@
 #include "traymenu.h"
 
-#include "paintutil.h"
-
 #include <QDateTime>
 #include <QGuiApplication>
 #include <QMenu>
@@ -11,26 +9,46 @@
 #include <QSystemTrayIcon>
 #include <QTimer>
 
-QIcon makeAppIcon(int size)
+namespace {
+/// 兜底图标：透明底三条信号弧 + 端点，配色对齐 logo
+/// （薄荷绿 #3CCB7F → 深青 #0EA5A0），与 cs 的 TrayIcon.DrawFallback 同形，不画背景方块
+QPixmap fallbackIcon(int px)
 {
-    QPixmap pm(size, size);
+    QPixmap pm(px, px);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing, true);
-
-    const QColor bg(0x0d, 0x11, 0x17);
-    const QColor accent(0x3f, 0xb9, 0x50);
+    const double u = px / 32.0;
+    const QPointF c(px / 2.0, px * 0.72);
+    const struct {
+        double r;
+        const char *hex;
+    } rings[] = {{12.0, "#3CCB7F"}, {8.0, "#28CB93"}, {4.0, "#0EA5A0"}};
+    p.setBrush(Qt::NoBrush);
+    for (const auto &ring : rings) {
+        QPen pen(QColor(ring.hex), 3.0 * u);
+        pen.setCapStyle(Qt::RoundCap);
+        p.setPen(pen);
+        const double r = ring.r * u;
+        p.drawArc(QRectF(c.x() - r, c.y() - r, r * 2, r * 2), 40 * 16, 100 * 16);
+    }
     p.setPen(Qt::NoPen);
-    p.setBrush(bg);
-    p.drawRoundedRect(QRectF(0.5, 0.5, size - 1.0, size - 1.0), size * 0.22, size * 0.22);
+    p.setBrush(QColor(QStringLiteral("#0EA5A0")));
+    p.drawEllipse(c, 1.6 * u, 1.6 * u);
+    return pm;
+}
+} // namespace
 
-    // 三段 WiFi 弧 + 圆点，按图标尺寸等比缩放
-    const double s = size / 16.0;
-    p.translate(0, size * 0.06);
-    p.scale(s, s);
-    drawWifiArcs(p, 8.0, 8.0, accent);
-    p.end();
-    return QIcon(pm);
+QIcon appIcon()
+{
+    const QIcon ico(QStringLiteral(":/HwWidget.ico"));
+    if (!ico.isNull() && !ico.availableSizes().isEmpty())
+        return ico;
+
+    QIcon fallback;
+    for (int s : {16, 20, 24, 32, 40, 48, 64, 256})
+        fallback.addPixmap(fallbackIcon(s));
+    return fallback;
 }
 
 void styleDarkMenu(QMenu *menu)
@@ -46,7 +64,7 @@ void styleDarkMenu(QMenu *menu)
 TrayIcon::TrayIcon(QObject *parent)
     : QObject(parent), tray_(new QSystemTrayIcon(this)), clickTimer_(new QTimer(this))
 {
-    tray_->setIcon(makeAppIcon(32));
+    tray_->setIcon(appIcon());
     clickTimer_->setSingleShot(true);
     clickTimer_->setInterval(QGuiApplication::styleHints()->mouseDoubleClickInterval() + 50);
     connect(clickTimer_, &QTimer::timeout, this, [this] {

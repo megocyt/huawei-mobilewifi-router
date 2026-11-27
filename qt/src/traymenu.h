@@ -6,8 +6,10 @@ class QMenu;
 class QSystemTrayIcon;
 class QTimer;
 
-/// 托盘/窗口图标（QPainter 绘制，与 cs 的 TrayIcon.Make 同风格）
-QIcon makeAppIcon(int size);
+/// 应用图标：优先用 qrc 内嵌的多尺寸 HwWidget.ico（Fluent 风格透明底信号弧，
+/// 与 cs 版 TrayIcon.MakeFor 同一份资源），资源缺失时回退到透明底三色弧。
+/// 不再画深色背景方块 —— Win11 托盘/任务栏按透明底图标显示。
+QIcon appIcon();
 /// 暗色右键菜单观感（对应 cs 的 DarkMenuRenderer）
 void styleDarkMenu(QMenu *menu);
 

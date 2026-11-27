@@ -17,6 +17,9 @@ constexpr int WinW = 660, WinH = 522, FooterH = 46;
 // 内容区（body）高度：窗口高减去自绘标题栏与 1px 边框；页脚按钮坐标要按 body 算，
 // 否则会掉到可视区外被裁掉
 constexpr int BodyH = WinH - 32 - 1;
+constexpr int BodyW = WinW - 2;
+constexpr int FooterTop = BodyH - FooterH;  // 页脚上沿（表、详情框都不能越过这条线）
+constexpr int ContentH = FooterTop - 42 - 8; // 表与详情框高度：顶部 42，底部留 8 间隔
 } // namespace
 
 SmsDialog::SmsDialog(WidgetWindow *owner, QWidget *parent) : LightWindow(parent), owner_(owner)
@@ -35,7 +38,8 @@ SmsDialog::SmsDialog(WidgetWindow *owner, QWidget *parent) : LightWindow(parent)
     count_->setStyleSheet(QStringLiteral("color:#787878;background:transparent;"));
 
     prev_ = new QPushButton(QStringLiteral("◀"), body());
-    prev_->setGeometry(436, 8, 32, 26);
+    prev_->setGeometry(436, 7, 32, Light::BtnH);
+    prev_->setStyleSheet(Light::flatBtnQss());
     connect(prev_, &QPushButton::clicked, this, [this] {
         if (page_ <= 1)
             return;
@@ -43,7 +47,8 @@ SmsDialog::SmsDialog(WidgetWindow *owner, QWidget *parent) : LightWindow(parent)
         applyList();
     });
     next_ = new QPushButton(QStringLiteral("▶"), body());
-    next_->setGeometry(472, 8, 32, 26);
+    next_->setGeometry(472, 7, 32, Light::BtnH);
+    next_->setStyleSheet(Light::flatBtnQss());
     connect(next_, &QPushButton::clicked, this, [this] {
         const int pages = qMax(1, (items_.size() + perPage_ - 1) / perPage_);
         if (page_ >= pages)
@@ -58,10 +63,12 @@ SmsDialog::SmsDialog(WidgetWindow *owner, QWidget *parent) : LightWindow(parent)
     status_->setStyleSheet(QStringLiteral("color:#B03030;background:transparent;"));
 
     table_ = new QTableWidget(0, 4, body());
-    table_->setGeometry(12, 42, 372, WinH - 42 - FooterH - 12);
+    table_->setGeometry(12, 42, 372, ContentH);
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
+    table_->setFocusPolicy(Qt::NoFocus); // 不要当前单元格的黑色焦点框，状态列只看圆点
+    table_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     table_->setShowGrid(true);
     table_->verticalHeader()->setVisible(false);
     table_->horizontalHeader()->setHighlightSections(false);
@@ -76,21 +83,26 @@ SmsDialog::SmsDialog(WidgetWindow *owner, QWidget *parent) : LightWindow(parent)
                                        Lang::t(QStringLiteral("sms.col.from")),
                                        Lang::t(QStringLiteral("sms.col.date")),
                                        Lang::t(QStringLiteral("sms.col.content"))});
-    table_->setColumnWidth(0, 52);
+    table_->setColumnWidth(0, 40);
     table_->setColumnWidth(1, 108);
     table_->setColumnWidth(2, 128);
-    table_->setColumnWidth(3, 60);
+    // 内容列吃掉剩余宽度，避免状态列被拉宽、内容列挤成省略号
+    table_->horizontalHeader()->setStretchLastSection(true);
+    // “●/○”是图标式的标记，列窄一点并居中
+    if (QTableWidgetItem *h0 = table_->horizontalHeaderItem(0))
+        h0->setTextAlignment(Qt::AlignCenter);
     connect(table_, &QTableWidget::currentCellChanged, this,
             [this](int row, int, int, int) { fillDetail(row); });
 
     detail_ = new QPlainTextEdit(body());
-    detail_->setGeometry(392, 42, WinW - 12 - 392, WinH - 42 - FooterH - 12);
+    detail_->setGeometry(392, 42, BodyW - 12 - 392, ContentH);
     detail_->setReadOnly(true);
     detail_->setStyleSheet(QStringLiteral(
         "QPlainTextEdit { background:#FFFFFF; border:1px solid #C8C8C8; color:#202020; }"));
 
     markBtn_ = new QPushButton(Lang::t(QStringLiteral("sms.markread")), body());
-    markBtn_->setGeometry(12, BodyH - FooterH + 10, 100, 26);
+    markBtn_->setGeometry(12, FooterTop + 8, 100, Light::BtnH);
+    markBtn_->setStyleSheet(Light::flatBtnQss());
     connect(markBtn_, &QPushButton::clicked, this, [this] {
         const int row = table_->currentRow();
         if (row < 0)
@@ -102,7 +114,8 @@ SmsDialog::SmsDialog(WidgetWindow *owner, QWidget *parent) : LightWindow(parent)
     });
 
     delBtn_ = new QPushButton(Lang::t(QStringLiteral("sms.delete")), body());
-    delBtn_->setGeometry(120, BodyH - FooterH + 10, 88, 26);
+    delBtn_->setGeometry(120, FooterTop + 8, 88, Light::BtnH);
+    delBtn_->setStyleSheet(Light::flatBtnQss());
     connect(delBtn_, &QPushButton::clicked, this, [this] {
         const int row = table_->currentRow();
         if (row < 0)
@@ -118,11 +131,8 @@ SmsDialog::SmsDialog(WidgetWindow *owner, QWidget *parent) : LightWindow(parent)
     });
 
     closeBtn_ = new QPushButton(Lang::t(QStringLiteral("sms.close")), body());
-    closeBtn_->setGeometry(WinW - 12 - 84, BodyH - FooterH + 10, 84, 26);
-    closeBtn_->setStyleSheet(QStringLiteral(
-        "QPushButton { background:#0078D4; color:white; border:1px solid #0069BD; border-radius:3px; }"
-        "QPushButton:hover { background:#1A86D9; }"
-        "QPushButton:pressed { background:#0069BD; }"));
+    closeBtn_->setGeometry(BodyW - 12 - 84, FooterTop + 8, 84, Light::BtnH);
+    closeBtn_->setStyleSheet(Light::primaryBtnQss());
     connect(closeBtn_, &QPushButton::clicked, this, &SmsDialog::close);
 
     pageLbl_->setText(Lang::t(QStringLiteral("sms.loading")));
@@ -172,6 +182,7 @@ void SmsDialog::applyList()
         const SmsItem &m = items_.at(i);
         const int row = i - start;
         auto *st = new QTableWidgetItem(m.unread ? QStringLiteral("●") : QStringLiteral("○"));
+        st->setTextAlignment(Qt::AlignCenter);
         st->setForeground(m.unread ? QColor(0, 120, 212) : QColor(150, 155, 160));
         table_->setItem(row, 0, st);
         auto *from = new QTableWidgetItem(m.phone);

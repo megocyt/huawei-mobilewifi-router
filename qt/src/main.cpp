@@ -122,7 +122,8 @@ int main(int argc, char *argv[])
 
     Cfg cfg = Cfg::load();
     Lang::setLang(cfg.language);
-    QApplication::setWindowIcon(makeAppIcon(32));
+    // 窗口/任务栏图标与托盘共用内嵌的透明底 HwWidget.ico（多尺寸，系统按 DPI 选帧）
+    QApplication::setWindowIcon(appIcon());
 
 #ifdef Q_OS_WIN
     // 单实例：与 cs 版一致，重复启动只提示不叠加悬浮窗

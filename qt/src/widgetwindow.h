@@ -122,9 +122,11 @@ private:
     QVector<int> rowTops_;
     int hostsRowIdx_ = -1;
     int rowH_ = 18, labelW_ = 60;
+    int miniColW_ = 78; // 迷你条速率列宽：按当前字号算一次，之后固定
     QString appliedLang_;
 
-    QFont fTitle_, fLabel_, fValue_, fMono_;
+    // 卡片内所有文字共用一个字号（fValue_），不再为放得下而临时缩字
+    QFont fLabel_, fValue_, fMono_;
     QPixmap logo_;
 
     QPoint dragOff_;

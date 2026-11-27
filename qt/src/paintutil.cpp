@@ -38,22 +38,6 @@ QPainterPath roundRectPath(const QRectF &r, double rad)
     return path;
 }
 
-QFont fitFont(const QFont &base, const QString &text, int maxW)
-{
-    if (text.isEmpty() || maxW <= 0)
-        return base;
-    const double minSize = qMax(8.0, base.pointSizeF() - 3.0);
-    QFont cur = base;
-    double sz = base.pointSizeF();
-    while (sz > minSize) {
-        if (QFontMetricsF(cur).horizontalAdvance(text) <= maxW)
-            return cur;
-        sz = qMax(minSize, sz - 0.5);
-        cur.setPointSizeF(sz);
-    }
-    return cur;
-}
-
 void drawWifiArcs(QPainter &p, double cx, double cy, const QColor &c)
 {
     p.save();
@@ -142,39 +126,42 @@ void drawRowIcon(QPainter &p, const QString &key, const QRectF &box, const QColo
             // GDI+ FillPie 从 -90° 顺时针；Qt 角度逆时针为正
             p.drawPie(QRectF(cx - 7, cy - 7, 14, 14), 90 * 16, -int(sweep * 16));
         }
+        // 内圈直径 11：环宽 1.5，与其它图标的 1.4 描边观感一致（此前内圈只有 7，环过粗）
         p.setPen(Qt::NoPen);
         p.setBrush(bg);
-        p.drawEllipse(QPointF(cx, cy), 3.5, 3.5);
+        p.drawEllipse(QPointF(cx, cy), 5.5, 5.5);
     } else if (key == QLatin1String("traffic")) {
-        p.setPen(Qt::NoPen);
-        p.setBrush(bFill);
-        p.drawEllipse(QPointF(cx - 4, cy), 4, 4);
-        p.drawEllipse(QPointF(cx + 3, cy - 2), 5, 5);
-        p.drawRect(QRectF(cx - 6, cy, 13, 5));
+        // 描边云朵：三个图形取并集后只画外轮廓，与其它图标同为线性，不再实心填充
+        p.setPen(pen);
+        p.setBrush(Qt::NoBrush);
+        QPainterPath cloud;
+        cloud.addEllipse(QPointF(cx - 4, cy + 0.8), 3.3, 3.3);
+        cloud.addEllipse(QPointF(cx + 2.4, cy - 2.0), 4.0, 4.0);
+        cloud.addRoundedRect(QRectF(cx - 7.2, cy - 0.4, 13.2, 5.0), 2.5, 2.5);
+        p.drawPath(cloud.simplified());
     } else if (key == QLatin1String("hosts")) {
         p.setPen(pen);
         p.setBrush(Qt::NoBrush);
         p.drawRect(QRectF(cx - 8, cy - 6, 11, 8));
         p.drawRect(QRectF(cx - 3, cy - 2, 11, 8));
     } else if (key == QLatin1String("battery")) {
+        // 外框 16 宽（与型号/终端/短信图标同宽），不再额外铺 35% 底色，避免比其它图标重
         p.setPen(pen);
         p.setBrush(Qt::NoBrush);
-        p.drawRect(QRectF(cx - 9, cy - 5, 16, 10));
+        p.drawRect(QRectF(cx - 8, cy - 5, 15, 10));
         p.setPen(Qt::NoPen);
         p.setBrush(bFill);
-        p.drawRect(QRectF(cx + 7.5, cy - 2.5, 2, 5));
-        const double fillW = qBound(0.0, frac, 1.0) * 12.0;
+        p.drawRect(QRectF(cx + 7, cy - 2.5, 1.8, 5));
+        const double fillW = qBound(0.0, frac, 1.0) * 11.0;
         if (charging) {
-            p.setBrush(blend(bg, c, 0.35));
-            p.drawRect(QRectF(cx - 7.5, cy - 3.5, fillW, 7));
             QPolygonF bolt;
-            bolt << QPointF(cx + 1.5, cy - 4.5) << QPointF(cx - 3, cy + 0.5)
-                 << QPointF(cx - 0.5, cy + 0.5) << QPointF(cx - 2, cy + 4.5)
-                 << QPointF(cx + 3, cy - 0.5) << QPointF(cx + 0.5, cy - 0.5);
+            bolt << QPointF(cx + 1.2, cy - 4.4) << QPointF(cx - 3.2, cy + 0.6)
+                 << QPointF(cx - 0.6, cy + 0.6) << QPointF(cx - 1.8, cy + 4.4)
+                 << QPointF(cx + 3.0, cy - 0.6) << QPointF(cx + 0.4, cy - 0.6);
             p.setBrush(bFill);
             p.drawPolygon(bolt);
         } else if (fillW > 0.5) {
-            p.drawRect(QRectF(cx - 7.5, cy - 3.5, fillW, 7));
+            p.drawRect(QRectF(cx - 6.6, cy - 3.6, fillW, 7.2));
         }
     } else if (key == QLatin1String("msisdn")) {
         p.setPen(pen);

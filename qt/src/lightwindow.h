@@ -21,6 +21,12 @@ QColor editBorder();
 QColor groupBorder();
 QColor text();
 QColor gray();
+
+/// 三窗（设置/终端/短信）共用的按钮外观。原生 Windows 样式带 5px 内边距，
+/// 12pt 中文会被裁掉，所以统一用 QSS 接管；高度固定 BtnH，靠 padding 定内容。
+QString flatBtnQss();
+QString primaryBtnQss();
+constexpr int BtnH = 28;
 } // namespace Light
 
 /// 无边框浅色窗基类：自绘奶油色标题栏（高 32）+ 关闭按钮 + 1px 边框，

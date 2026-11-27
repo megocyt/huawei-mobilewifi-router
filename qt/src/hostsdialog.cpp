@@ -14,8 +14,12 @@
 
 namespace {
 constexpr int WinW = 760, WinH = 470, FooterH = 46;
-// 内容区（body）高度：减去自绘标题栏与 1px 边框，页脚按钮按它定位才不会被裁
+// 内容区（body）高度：减去自绘标题栏与 1px 边框，页脚按钮与表格都按它定位
 constexpr int BodyH = WinH - 32 - 1;
+constexpr int BodyW = WinW - 2;
+constexpr int FooterTop = BodyH - FooterH;    // 页脚上沿（表格不能越过这条线）
+constexpr int TableTop = 42;                  // 工具行（刷新 + 计数）下方
+constexpr int ContentH = FooterTop - TableTop - 8; // 表格底边停在页脚上方 8px
 const QColor kOnline(37, 128, 66);
 const QColor kOffline(150, 155, 160);
 
@@ -37,20 +41,22 @@ HostsDialog::HostsDialog(WidgetWindow *owner, QWidget *parent) : LightWindow(par
     body()->setGeometry(1, TitleH, WinW - 2, WinH - TitleH - 1);
 
     refresh_ = new QPushButton(Lang::t(QStringLiteral("menu.refresh")), body());
-    refresh_->setGeometry(12, 8, 88, 26);
+    refresh_->setGeometry(12, 7, 88, Light::BtnH);
+    refresh_->setStyleSheet(Light::flatBtnQss());
     connect(refresh_, &QPushButton::clicked, this, &HostsDialog::reload);
 
     count_ = new QLabel(body());
-    count_->setGeometry(110, 13, WinW - 130, 20);
+    // 右边缘与表格对齐（body 右边距 12），与刷新按钮同一行、同高居中
+    count_->setGeometry(110, 7, BodyW - 12 - 110, Light::BtnH);
     count_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     count_->setStyleSheet(QStringLiteral("color:#787878;background:transparent;"));
 
-    const int ly = 8 + 34;
     table_ = new QTableWidget(0, kColCount, body());
-    table_->setGeometry(12, ly, WinW - 24, WinH - ly - FooterH - 10);
+    table_->setGeometry(12, TableTop, BodyW - 24, ContentH);
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
+    table_->setFocusPolicy(Qt::NoFocus); // 与短信窗一致：不要当前单元格的黑色焦点框
     table_->setShowGrid(true);
     table_->setWordWrap(false);
     table_->verticalHeader()->setVisible(false);
@@ -70,11 +76,8 @@ HostsDialog::HostsDialog(WidgetWindow *owner, QWidget *parent) : LightWindow(par
     connect(table_->horizontalHeader(), &QHeaderView::sectionClicked, this, &HostsDialog::onColumnClicked);
 
     closeBtn_ = new QPushButton(Lang::t(QStringLiteral("sms.close")), body());
-    closeBtn_->setGeometry(WinW - 12 - 84, BodyH - FooterH + 10, 84, 26);
-    closeBtn_->setStyleSheet(QStringLiteral(
-        "QPushButton { background:#0078D4; color:white; border:1px solid #0069BD; border-radius:3px; }"
-        "QPushButton:hover { background:#1A86D9; }"
-        "QPushButton:pressed { background:#0069BD; }"));
+    closeBtn_->setGeometry(BodyW - 12 - 84, FooterTop + 8, 84, Light::BtnH);
+    closeBtn_->setStyleSheet(Light::primaryBtnQss());
     connect(closeBtn_, &QPushButton::clicked, this, &HostsDialog::close);
 
     reload();

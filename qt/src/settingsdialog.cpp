@@ -229,33 +229,37 @@ void SettingsDialog::buildUi()
         delete w;
 
     tabs_ = new QTabWidget(body());
-    tabs_->setGeometry(8, 8, WinW - 18, WinH - TitleH - FooterH - 16);
+    // 左右边距 12，与页脚按钮、终端/短信窗的表格对齐
+    tabs_->setGeometry(12, 8, body()->width() - 24, WinH - TitleH - FooterH - 16);
     tabs_->addTab(buildConnPage(), Lang::t(QStringLiteral("tab.conn")));
     tabs_->addTab(buildStylePage(), Lang::t(QStringLiteral("tab.style")));
     tabs_->addTab(buildLookPage(), Lang::t(QStringLiteral("tab.look")));
     tabs_->addTab(buildRowsPage(), Lang::t(QStringLiteral("tab.rows")));
 
     auto *reset = new QPushButton(Lang::t(QStringLiteral("btn.reset")), body());
-    reset->setGeometry(12, WinH - TitleH - FooterH + 10, 96, 26);
+    // 页脚几何统一按 body 尺寸算：三窗同一套 12px 边距 + 28px 按钮高，
+    // 不再出现 WinW/WinH 混用导致按钮与标签页右边缘对不齐
+    const int bw = body()->width();
+    const int footerTop = body()->height() - FooterH + 8;
+    reset->setGeometry(12, footerTop, 96, Light::BtnH);
+    reset->setStyleSheet(Light::flatBtnQss());
     connect(reset, &QPushButton::clicked, this, [this] { resetPage(tabs_ ? tabs_->currentIndex() : 0); });
 
     auto *cancel = new QPushButton(Lang::t(QStringLiteral("btn.cancel")), body());
-    cancel->setGeometry(WinW - 18 - 180, WinH - TitleH - FooterH + 10, 84, 26);
+    cancel->setGeometry(bw - 12 - 84 - 8 - 84, footerTop, 84, Light::BtnH);
+    cancel->setStyleSheet(Light::flatBtnQss());
     connect(cancel, &QPushButton::clicked, this, [this] {
         Lang::setLang(cur_.language);
         reject();
     });
 
     auto *save = new QPushButton(Lang::t(QStringLiteral("btn.save")), body());
-    save->setGeometry(WinW - 18 - 88, WinH - TitleH - FooterH + 10, 84, 26);
-    save->setStyleSheet(QStringLiteral(
-        "QPushButton { background:#0078D4; color:white; border:1px solid #0069BD; border-radius:3px; }"
-        "QPushButton:hover { background:#1A86D9; }"
-        "QPushButton:pressed { background:#0069BD; }"));
+    save->setGeometry(bw - 12 - 84, footerTop, 84, Light::BtnH);
+    save->setStyleSheet(Light::primaryBtnQss());
     connect(save, &QPushButton::clicked, this, &SettingsDialog::onSave);
 
     auto *line = new QWidget(body());
-    line->setGeometry(0, WinH - TitleH - FooterH, WinW - 2, 1);
+    line->setGeometry(0, body()->height() - FooterH, bw, 1);
     line->setStyleSheet(QStringLiteral("background:#DADADA;"));
     line->lower();
 
@@ -412,6 +416,7 @@ QWidget *SettingsDialog::buildGeneralSub()
     v->addLayout(alphaRow);
 
     auto *reset = new QPushButton(Lang::t(QStringLiteral("btn.reset")), page);
+    reset->setStyleSheet(Light::flatBtnQss());
     connect(reset, &QPushButton::clicked, this, [this] {
         applyDefaults(cur_, QStringLiteral("general"));
         if (fontSize_)
@@ -456,6 +461,7 @@ QWidget *SettingsDialog::buildColorSub()
     v->addWidget(grp);
 
     auto *reset = new QPushButton(Lang::t(QStringLiteral("btn.reset")), page);
+    reset->setStyleSheet(Light::flatBtnQss());
     connect(reset, &QPushButton::clicked, this, [this] {
         applyDefaults(cur_, QStringLiteral("color"));
         if (swatches_[0]) {
@@ -499,6 +505,7 @@ QWidget *SettingsDialog::buildBehaviorSub()
     v->addWidget(grp);
 
     auto *reset = new QPushButton(Lang::t(QStringLiteral("btn.reset")), page);
+    reset->setStyleSheet(Light::flatBtnQss());
     connect(reset, &QPushButton::clicked, this, [this] {
         applyDefaults(cur_, QStringLiteral("behavior"));
         if (top_)

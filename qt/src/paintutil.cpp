@@ -47,8 +47,10 @@ void drawWifiArcs(QPainter &p, double cx, double cy, const QColor &c)
     p.setBrush(Qt::NoBrush);
     for (int i = 1; i <= 3; ++i) {
         const double rr = 3.0 * i;
-        // GDI+ 角度以度、逆时针；Qt 以 1/16 度、逆时针
-        p.drawArc(QRectF(cx - rr, cy + 4 - rr, rr * 2, rr * 2), -135 * 16, -90 * 16);
+        // cs 用 GDI+ DrawArc(225, 90)：GDI+ 顺时针为正，225° 是左上（10:30），扫 90° 经 12 点到 1:30。
+        // Qt 逆时针为正且以 1/16 度计，故换成 135°(=-225°) 起步、扫 -90°，弧才覆盖顶部
+        //（此前写成 -135 起步，弧落到左侧，三圈叠成横向的「(((」）
+        p.drawArc(QRectF(cx - rr, cy + 4 - rr, rr * 2, rr * 2), 135 * 16, -90 * 16);
     }
     p.setPen(Qt::NoPen);
     p.setBrush(c);
@@ -90,7 +92,8 @@ void drawRowIcon(QPainter &p, const QString &key, const QRectF &box, const QColo
             const double rr = 3.0 * i;
             p.setPen((i == 1 || key == QLatin1String("conn")) ? pen : penD);
             p.setBrush(Qt::NoBrush);
-            p.drawArc(QRectF(cx - rr, cy + 4 - rr, rr * 2, rr * 2), -135 * 16, -90 * 16);
+            // 与 cs 的 GDI+ DrawArc(225, 90) 等价：135° 起步扫 -90°，弧顶朝上（详见 drawWifiArcs）
+            p.drawArc(QRectF(cx - rr, cy + 4 - rr, rr * 2, rr * 2), 135 * 16, -90 * 16);
         }
         p.setPen(Qt::NoPen);
         p.setBrush(bFill);

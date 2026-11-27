@@ -641,20 +641,11 @@ void WidgetWindow::paintFull(QPainter &p)
         const QString title = hint_.isEmpty() ? (QStringLiteral("HUAWEI WiFi · ") + cfg_.host) : hint_;
         p.setFont(fValue_);
         p.setPen(pal.titleFg());
-        p.drawText(QRect(textX + 2, y, rc.right() - Pad - 70 - textX, QFontMetrics(fValue_).height()),
-                   Qt::AlignLeft | Qt::AlignVCenter, title);
-
-        const QString badge = haveSnap_ ? snap_.net : QStringLiteral("-");
-        const QFontMetrics ftm(fValue_);
-        const int bw = ftm.horizontalAdvance(badge);
-        const int bh = ftm.height() + 6;
-        const QRectF br(rc.right() - Pad - bw - 14, y, bw + 14, bh);
-        p.setPen(QPen(blend(pal.bg, pal.accent, 0.6), 1));
-        p.setBrush(blend(pal.bg, pal.accent, 0.12));
-        p.drawPath(roundRectPath(br, 4));
-        p.setFont(fValue_);
-        p.setPen(pal.accent);
-        p.drawText(br.adjusted(7, 3, 0, 0), Qt::AlignLeft | Qt::AlignVCenter, badge);
+        // 标题靠右不再给 badge 留位（原 -70），超长时用省略号而非硬裁
+        const int titleW = rc.right() - Pad - (textX + 2);
+        p.drawText(QRect(textX + 2, y, titleW, QFontMetrics(fValue_).height()),
+                   Qt::AlignLeft | Qt::AlignVCenter,
+                   QFontMetrics(fValue_).elidedText(title, Qt::ElideRight, titleW));
 
         y += QFontMetrics(fValue_).height() + 12;
         p.setPen(QPen(pal.line(), 1));
@@ -1060,9 +1051,7 @@ void WidgetWindow::applyAlphaStep(int delta)
     const double a = cfg_.alpha + (delta > 0 ? 0.05 : -0.05);
     cfg_.alpha = std::round(qBound(0.25, a, 1.0) * 100) / 100.0;
     setWindowOpacity(cfg_.alpha);
-    hint_ = fmt1(Lang::t(QStringLiteral("hint.alpha")), QString::number(int(std::round(cfg_.alpha * 100))));
-    hintTimer_->stop();
-    hintTimer_->start();
+    // 不弹提示：滚轮微调透明度的频率很高，气泡会盖住标题行打断视线
     saveTimer_->stop();
     saveTimer_->start();
     update();
@@ -1136,10 +1125,7 @@ void WidgetWindow::doCmd(const QString &cmd)
         cfg_.clickThrough = !cfg_.clickThrough;
         cfg_.save();
         applyClickThrough();
-        hint_ = cfg_.clickThrough ? Lang::t(QStringLiteral("hint.clickon"))
-                                  : Lang::t(QStringLiteral("hint.clickoff"));
-        hintTimer_->stop();
-        hintTimer_->start();
+        // 不弹提示：菜单项本身已在「穿透模式 / 关闭穿透模式」之间切换，状态自明
         rebuildMenu();
         update();
     } else if (cmd == QLatin1String("style")) {
@@ -1327,6 +1313,12 @@ void WidgetWindow::updateTrayTip()
     QString tip = Lang::t(QStringLiteral("tray.title"));
     if (haveSnap_) {
         tip += QStringLiteral(" · ") + snap_.net + QLatin1Char(' ') + snap_.conn;
+        // 当日使用量：悬停托盘就能看到今天用了多少（CurrentDayUsed，与卡片「流量」行同源）。
+        // 三项同为 0 时视为月度统计没取到，不显示，避免误报 0B。
+        if (snap_.dayUsed > 0 || snap_.monthDown + snap_.monthUp > 0 || snap_.planLimit > 0) {
+            tip += QStringLiteral(" · ") + Lang::t(QStringLiteral("v.today")) + QLatin1Char(' ')
+                   + QString(humanBytes(double(snap_.dayUsed), 1)).remove(QLatin1Char(' '));
+        }
         if (snap_.planLimit > 0)
             tip += QStringLiteral(" · ") + Lang::t(QStringLiteral("lbl.plan")) + QLatin1Char(' ')
                    + QString::number(int(std::round(snap_.planPercent))) + QLatin1Char('%');
@@ -1335,8 +1327,8 @@ void WidgetWindow::updateTrayTip()
     }
     if (!err_.isEmpty())
         tip += QStringLiteral(" · ⚠") + trunc(err_, 20);
-    if (tip.size() > 60)
-        tip = tip.left(60);
+    if (tip.size() > 100)
+        tip = tip.left(100); // NT6+ 的 szTip 是 128 字符，100 留余量又不截掉最后一项
     tray_->setToolTip(tip);
 }
 
